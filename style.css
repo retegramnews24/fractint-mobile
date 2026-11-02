@@ -173,3 +173,11 @@ body.art-only .visual-stage canvas#previewCanvas{object-fit:fill!important}
 .save-sheet-simple .save-secondary{background:#30253e;border:1px solid #8e72aa55}
 .save-sheet-simple .save-status{line-height:1.55;font-size:12px;color:#e0cde9}
 .save-sheet-simple img{max-height:25dvh}
+
+/* v4.6.2: clean one-action delivery panel */
+.save-sheet-simple .save-sheet-actions:empty{display:none}
+.save-sheet-simple .save-primary:disabled{opacity:.65;cursor:progress}
+.save-sheet-simple .save-secondary[hidden]{display:none!important}
+.save-sheet-simple .save-status{font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+.save-sheet-simple img{max-height:23dvh}
+.splash-screen canvas{image-rendering:auto;filter:saturate(1.22) contrast(1.05)}

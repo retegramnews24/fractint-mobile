@@ -67,3 +67,12 @@ Licensed under the terms of `LICENSE`.
 - **Per il download nativo di Telegram realmente compatibile**, incluso un Worker Cloudflare con bucket R2, autenticazione `initData` e URL HTTPS. Devi configurarlo una sola volta: leggi `telegram-download-service/README.md` e poi modifica `js/download-config.js`.
 - Senza il Worker la condivisione e il download browser restano fallback, non garantiti su ogni WebView Android.
 - Telegram e Android scelgono dove archiviare i PNG: l'app non può forzare una cartella privata di Telegram.
+
+
+## Aggiornamento v4.6.2 (base v4.6, nessuna modifica v4.7)
+- Stesso splash di 5 secondi, stesso tema cromatico e animazione Julia, ora WebGL2 quando disponibile (più nitido) e renderer CPU adattivo di ripiego.
+- Rimossi i pulsanti PNG `blob:` e `window.open(blob:)` non affidabili nella WebView Telegram Android.
+- Nuova consegna del PNG originale alla chat privata del bot usando `sendDocument`. Richiede il Worker HTTPS incluso, ma non Cloudflare R2.
+- Il token del bot **non deve mai comparire nel JavaScript pubblico, nemmeno cifrato**: configurarlo come segreto Cloudflare. Leggi `telegram-download-service/README.md`.
+- Nessuna modifica a formule, preset, zoom, gesture o meccanismo fullscreen v4.6.1.
+- Se il Worker non è configurato, l'interfaccia spiega la limitazione anziché fingere che un PNG sia stato scaricato.

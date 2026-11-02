@@ -4,7 +4,7 @@ const canvas2d=$('canvas2d'),canvas3d=$('canvas3d'),previewCanvas=$('previewCanv
 let lastFrame=null,lastRenderView=null,activeRenderView=null,previewActive=false;
 const captureProfiles={screen:{factor:1,budget:3_000_000,label:'NORMALE'},hd:{factor:2,budget:8_000_000,label:'HD'},ultra:{factor:3,budget:12_000_000,label:'ULTRA'}};
 let captureQuality='hd';
-let saveImageURL=null,saveImageFile=null;
+
 let renderProgressTimer=0,renderHideTimer=0,renderStartedAt=0,renderEstimateMs=3500,renderHasWorkerProgress=false,renderToken=0;
 let exportWorker=null,exportInProgress=false,exportBusyToken=0,exportDockTimer=0,fullscreenResizeTimer=0,fullscreenViewport=null,normalExitViewport=null,fullscreenPendingRender=false;
 const qFactor=()=>1n<<BigInt(deepBits);
@@ -269,82 +269,88 @@ async function renderExportPNG(){const {width,height}=exportDimensions();
  deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?deepScale.toString():'0'};
  return await workerExportImage(cfg);
 }
-// One file, one completion sheet. Browser and Telegram native downloads are intentionally separate.
+// Fractal Art Explorer v4.6.2 — no untrusted blob: popup, no deceptive "saved" toast.
+// A signed Telegram Mini App session uploads the PNG to an optional secured backend.
+// Backend sends the original PNG as document to this user's private bot chat.
 const DOWNLOAD_SERVICE=(typeof window.FAE_DOWNLOAD_SERVICE==='string'?window.FAE_DOWNLOAD_SERVICE:'').trim().replace(/\/$/,'');
-let hostedFileURL=null,hostedFileName=null;
+let preparedPNGURL=null;
 function closeSaveSheet(){
- const box=document.getElementById('saveSheet');box?.remove();
- if(saveImageURL){URL.revokeObjectURL(saveImageURL);saveImageURL=null;}
- saveImageFile=null;hostedFileURL=null;hostedFileName=null;
+ document.getElementById('saveSheet')?.remove();
+ if(preparedPNGURL){URL.revokeObjectURL(preparedPNGURL);preparedPNGURL=null;}
  if(artOnly)showExportDock(3500);
 }
-function canShareImage(file){try{return typeof navigator.share==='function'&&typeof navigator.canShare==='function'&&navigator.canShare({files:[file]});}catch(_){return false;}}
-async function uploadForTelegram(blob,name){
- const tg=window.Telegram?.WebApp;
- if(!DOWNLOAD_SERVICE||!tg?.initData||!tg?.isVersionAtLeast?.('8.0')||typeof tg.downloadFile!=='function')return null;
- // Never send bot tokens to GitHub Pages. Telegram initData is verified in the separate backend.
- const response=await fetch(DOWNLOAD_SERVICE+'/api/images',{method:'POST',headers:{'Content-Type':'image/png','X-Telegram-Init-Data':tg.initData,'X-File-Name':name},body:blob,cache:'no-store'});
- if(!response.ok)throw Error('Servizio Telegram: '+response.status);
- const info=await response.json();
- if(!info.url||!/^https:\/\//.test(info.url))throw Error('URL di download non valido');
- return info.url;
-}
-function directDownload(url,name){
- const a=document.createElement('a');a.href=url;a.download=name;a.rel='noopener';a.style.display='none';document.body.appendChild(a);a.click();a.remove();
-}
-function saveDialog(blob,name,telegramUrl=null){
+function makeSaveSheet(blob,name){
  closeSaveSheet();
- saveImageURL=URL.createObjectURL(blob);saveImageFile=new File([blob],name,{type:'image/png'});
- hostedFileURL=telegramUrl;hostedFileName=name;
+ preparedPNGURL=URL.createObjectURL(blob);
  const tg=window.Telegram?.WebApp;
- const nativeOK=!!(hostedFileURL&&tg?.isVersionAtLeast?.('8.0')&&typeof tg.downloadFile==='function');
- const shareOK=canShareImage(saveImageFile);
- const box=document.createElement('section');box.id='saveSheet';box.className='save-sheet save-sheet-simple';
- box.setAttribute('role','dialog');box.setAttribute('aria-label','Salva immagine PNG');
- const heading=document.createElement('div');heading.className='save-sheet-header';
- heading.innerHTML='<strong>Immagine pronta</strong><button type="button" id="saveClose" aria-label="Chiudi">×</button>';
- const status=document.createElement('p');status.className='save-status';status.textContent=(nativeOK?'Salva con Telegram sul dispositivo.':shareOK?'Scegli dove salvare dal menu Android.':'Scarica il PNG. Se Telegram blocca il download, apri l’immagine nel browser.');
+ const hasSession=!!tg?.initData;
+ const canSend=hasSession&&!!DOWNLOAD_SERVICE;
+ const canShare=!!navigator.share&&!!navigator.canShare&&(()=>{try{return navigator.canShare({files:[new File([blob],name,{type:'image/png'})]});}catch{return false;}})();
+ const isTelegram=!!(tg?.initData||tg?.platform&&tg.platform!=='unknown');
+ const box=document.createElement('section');box.id='saveSheet';box.className='save-sheet save-sheet-simple';box.setAttribute('role','dialog');box.setAttribute('aria-label','Salvataggio frattale');
+ const head=document.createElement('div');head.className='save-sheet-header';head.innerHTML='<strong>Immagine pronta</strong><button type="button" id="saveClose" aria-label="Chiudi">×</button>';
+ const status=document.createElement('p');status.className='save-status';status.setAttribute('aria-live','polite');
+ const actions=document.createElement('div');actions.className='save-sheet-actions';
+ const preview=document.createElement('img');preview.src=preparedPNGURL;preview.alt='Anteprima del frattale';
+ // The preview is deliberately NOT linked to a blob: popup: Telegram blocks it on many Android versions.
  const primary=document.createElement('button');primary.type='button';primary.className='save-primary';
- primary.textContent=nativeOK?'SALVA CON TELEGRAM':shareOK?'SALVA / CONDIVIDI':'SCARICA PNG';
- const alternative=document.createElement('button');alternative.type='button';alternative.className='save-secondary';
- alternative.textContent=nativeOK?(shareOK?'Condividi con Android':'Scarica con browser'):'Apri immagine per salvarla';
- const preview=document.createElement('img');preview.alt='Immagine PNG pronta';preview.src=saveImageURL;
- const actions=document.createElement('div');actions.className='save-sheet-actions';actions.append(primary,alternative);
- box.append(heading,status,actions,preview);document.body.appendChild(box);
- heading.querySelector('button').onclick=closeSaveSheet;
- const share=()=>navigator.share({files:[saveImageFile],title:'Fractal Art Explorer'});
- const fallback=()=>{if(shareOK){share().then(()=>{status.textContent='Condivisione completata.';}).catch(e=>{if(e.name!=='AbortError')status.textContent='Condivisione non consentita. Usa Apri immagine.';});}
- else directDownload(hostedFileURL||saveImageURL,name);};
- const openImage=()=>{
-  // Opening through an actual tap preserves user activation. Image is kept visible for long press.
-  const url=hostedFileURL||saveImageURL;
-  try{const win=window.open(url,'_blank','noopener');if(!win){status.textContent='Telegram ha bloccato la nuova finestra. Apri la Mini App in Chrome oppure tieni premuto sull’anteprima.';}}
-  catch(_){status.textContent='Apri la Mini App in Chrome oppure tieni premuto sull’anteprima.';}
- };
- primary.onclick=()=>{
-  if(nativeOK){
-   status.textContent='Conferma il download nella finestra di Telegram.';
-   try{tg.downloadFile({url:hostedFileURL,file_name:name},accepted=>{status.textContent=accepted?'Download accettato da Telegram. Controlla i file scaricati.':'Download annullato. Puoi usare il metodo alternativo.';});}
-   catch(e){status.textContent='Download Telegram non riuscito: usa il metodo alternativo.';}
-  }else if(shareOK){fallback();}
-  else{directDownload(saveImageURL,name);status.textContent='Se Telegram non mostra un download, usa “Apri immagine” e salvala dal browser.';}
- };
- alternative.onclick=()=>{if(nativeOK){if(shareOK)fallback();else{directDownload(hostedFileURL,name);status.textContent='Se il download non appare, apri l’immagine.';}}
- else openImage();};
+ const second=document.createElement('button');second.type='button';second.className='save-secondary';
+ const setBusy=(busy)=>{primary.disabled=busy;second.disabled=busy;primary.textContent=busy?'INVIO A TELEGRAM…':'INVIA ALLA CHAT DEL BOT';};
+ if(canSend){
+   status.textContent='Invia il PNG originale alla chat privata del bot. Poi apri la chat e salva il file con Telegram.';
+   primary.textContent='INVIA ALLA CHAT DEL BOT';
+   primary.onclick=async()=>{
+    setBusy(true);status.textContent='Invio sicuro in corso…';
+    try{
+      const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),60000);
+      let response;
+      try{response=await fetch(DOWNLOAD_SERVICE+'/api/send',{method:'POST',headers:{'Content-Type':'image/png','X-Telegram-Init-Data':tg.initData,'X-File-Name':name},body:blob,cache:'no-store',signal:ctrl.signal});}
+      finally{clearTimeout(timer);}
+      const result=await response.json().catch(()=>({error:'Risposta server non valida'}));
+      if(!response.ok||!result.ok)throw Error(result.error||'Invio non riuscito ('+response.status+')');
+      status.textContent='✓ PNG ricevuto da Telegram! Apri la chat del bot: troverai il documento originale da salvare.';
+      if(result.bot_url&&/^https:\/\/t\.me\/[A-Za-z0-9_]+$/.test(result.bot_url)){
+        second.textContent='APRI LA CHAT DEL BOT';second.onclick=()=>{
+         if(tg?.openTelegramLink)tg.openTelegramLink(result.bot_url);
+         else location.href=result.bot_url;
+        };second.hidden=false;second.disabled=false;
+      }
+      primary.textContent='✓ INVIATO';primary.disabled=true;
+    }catch(e){
+      status.textContent=e.name==='AbortError'?'Invio scaduto: controlla la connessione.':(e.message||'Invio non riuscito.');
+      if(/start|blocked|forbidden|403/i.test(status.textContent))status.textContent+=' Apri la chat del tuo bot e premi /start, poi riprova.';
+      setBusy(false);
+    }
+   };
+   actions.append(primary);
+   second.hidden=true;second.textContent='APRI LA CHAT';actions.append(second);
+ }else if(canShare){
+   status.textContent='Android può salvare il file dal menu di condivisione. Seleziona File oppure Telegram.';
+   primary.textContent='CONDIVIDI IL PNG';
+   primary.onclick=async()=>{try{await navigator.share({files:[new File([blob],name,{type:'image/png'})],title:'Fractal Art Explorer'});status.textContent='Condivisione terminata. Controlla la destinazione scelta.';}catch(e){if(e.name!=='AbortError')status.textContent='Condivisione non disponibile in questa WebView. Usa lo screenshot Android.';}};
+   actions.append(primary);
+ }else if(!isTelegram){
+   status.textContent='Nel browser puoi scaricare il file originale.';
+   primary.textContent='SCARICA PNG';
+   primary.onclick=()=>{const a=document.createElement('a');a.href=preparedPNGURL;a.download=name;document.body.appendChild(a);a.click();a.remove();status.textContent='Download richiesto al browser. Controlla la cartella Download.';};
+   actions.append(primary);
+ }else{
+   // No backend configured: don't offer two controls that silently fail inside Telegram Android.
+   status.textContent=hasSession?'Salvataggio Telegram non ancora configurato: occorre pubblicare il servizio HTTPS incluso nello ZIP. Nel frattempo usa lo screenshot Android.':'Apri la Mini App dal bot Telegram per abilitare il salvataggio. Per ora usa lo screenshot Android.';
+ }
+ box.append(head,status,actions,preview);document.body.appendChild(box);
+ head.querySelector('button').onclick=closeSaveSheet;
+ return canSend?()=>primary.onclick():null;
 }
 async function downloadArt(choice){
  if(exportInProgress)return;
  captureQuality=captureProfiles[choice]?choice:'hd';exportInProgress=true;hideExportDock();
  showLoader('PREPARAZIONE PNG',10000);setRenderProgress(0);
  try{
-  const blob=await renderExportPNG();const name=imageFileName();
-  let uploaded=null,uploadWarning='';
-  if(DOWNLOAD_SERVICE&&window.Telegram?.WebApp?.initData){
-   try{setRenderProgress(95);uploaded=await uploadForTelegram(blob,name);}
-   catch(e){uploadWarning='Servizio Telegram non raggiungibile: salvataggio tramite Android/browser.';console.warn(e);}
-  }
-  hideLoader();saveDialog(blob,name,uploaded);
-  if(uploadWarning)document.querySelector('#saveSheet .save-status').textContent=uploadWarning;
+  const blob=await renderExportPNG();
+  hideLoader();const sendImmediately=makeSaveSheet(blob,imageFileName());
+  // One tap on Salva PNG both renders and delivers; leave Retry if network or bot rejects it.
+  if(sendImmediately)await sendImmediately();
  }catch(e){hideLoader();showToast('Immagine non creata: '+(e?.message||e));}
  finally{exportInProgress=false;}
 }
@@ -361,7 +367,7 @@ function setupInteractions(){
  $('qualityMenuBtn').onclick=()=>downloadArt($('saveQuality').value);
  $('exportDockButton').onclick=()=>downloadArt($('saveQuality').value);
  $('saveQuality').onchange=e=>{captureQuality=e.target.value;try{localStorage.setItem('fae-export-quality',captureQuality);}catch(_){}};
- $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora e salva</h2><p>Due dita: avvicina, allontana e ruota contemporaneamente la mappa. Un dito: sposta la vista.</p><p>Premi ⛶ per la tela immersiva. In basso scegli Normale, HD o Ultra e premi Salva. Quando l’immagine è pronta usa Condividi / Salva oppure Scarica PNG. In Telegram puoi usare anche una pressione prolungata sull’anteprima.</p><p>Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo superiore destro.</p>';openModal();};
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora e salva</h2><p>Due dita: avvicina, allontana e ruota contemporaneamente la mappa. Un dito: sposta la vista.</p><p>Premi ⛶ per la tela immersiva. In basso scegli Normale, HD o Ultra e premi Salva. Quando l’immagine è pronta usa “Invia alla chat del bot” (dopo aver configurato il servizio HTTPS) per ricevere il PNG originale in Telegram. In alternativa fai uno screenshot Android.</p><p>Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo superiore destro.</p>';openModal();};
  $('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal();};
  $('openLibrary').onclick=()=>$('library').classList.add('open');$('closeLibrary').onclick=()=>$('library').classList.remove('open');$('collapseControls').onclick=()=>{$('controlPanel').classList.toggle('collapsed');};
  const pointerDown=e=>{
@@ -439,7 +445,7 @@ function initArtExplorer(){
  $('resetBtn').onclick=()=>applyArtPreset(activeArtId||'violet-reverie');
  $('favoriteBtn').onclick=()=>toggleFavorite();
  $('formulaInfoBtn').onclick=()=>{const p=(window.FRACTAL_ART_PRESETS||[]).find(x=>x.id===activeArtId);if(!p)return;$('modalContent').innerHTML=`<div class="modal-kicker">${p.subtitle}</div><h2>${p.title}</h2><p>Una piccola finestra su un mondo infinito. Lasciati guidare dalle forme, cambia colore e segui i dettagli: ogni viaggio è unico.</p>`;openModal();};
- $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Entra nell’infinito</h2><p>Trascina con un dito; con due dita puoi ingrandire, spostare e ruotare la mappa. Usa ⛶ per la tela immersiva.</p><p>Se vuoi un PNG, scegli la qualità e premi Salva. Per lo screenshot usa i tasti del telefono.</p>';openModal();};
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Entra nell’infinito</h2><p>Trascina con un dito; con due dita puoi ingrandire, spostare e ruotare la mappa. Usa ⛶ per la tela immersiva.</p><p>Se vuoi un PNG, scegli la qualità, premi Salva e invia il documento alla chat del bot (servizio HTTPS necessario). Per lo screenshot usa i tasti del telefono.</p>';openModal();};
 }
 
 function start(){try{const saved=localStorage.getItem('fae-export-quality');if(captureProfiles[saved])captureQuality=saved;}catch(_){}$('saveQuality').value=captureQuality;initWorker();try{renderer3d=new FractInt3D(canvas3d);if(!renderer3d.ok){$('engineStatus').textContent='WEBGL2 NON DISPONIBILE';}}catch(e){console.warn(e);$('engineStatus').textContent='GPU ERROR';}setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{if(viewportAnchor&&e?.isStateStable)triggerFullscreenResize();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js').catch(()=>{});}
