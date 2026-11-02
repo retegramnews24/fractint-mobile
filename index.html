@@ -1,1 +1,38 @@
-
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#080b12"><meta name="color-scheme" content="dark">
+  <title>Fractint Mobile</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <main id="app">
+    <canvas id="fractal" aria-label="Esploratore di frattali"></canvas>
+    <header class="topbar">
+      <button id="menuBtn" class="iconbtn" aria-label="Apri controlli">☰</button>
+      <div class="brand"><strong>FRACTINT</strong><span>MOBILE EXPLORER</span></div>
+      <button id="resetBtn" class="iconbtn" aria-label="Ripristina vista">⌂</button>
+    </header>
+    <div class="hud"><span id="formulaLabel">MANDELBROT</span><span id="zoomLabel">ZOOM 1.00×</span></div>
+    <div class="hint" id="hint">Trascina per esplorare · pizzica per zoom</div>
+    <nav class="quickbar" aria-label="Formule">
+      <button class="formula active" data-formula="mandelbrot">Mandelbrot</button>
+      <button class="formula" data-formula="julia">Julia</button>
+      <button class="formula" data-formula="burning">Burning Ship</button>
+    </nav>
+    <aside id="panel" class="panel" aria-hidden="true">
+      <div class="panelhead"><div><small>ESPLORAZIONE</small><h1>Controlli</h1></div><button id="closePanel" class="iconbtn" aria-label="Chiudi">✕</button></div>
+      <label>Formula<select id="formulaSelect"><option value="mandelbrot">Mandelbrot</option><option value="julia">Julia</option><option value="burning">Burning Ship</option></select></label>
+      <label>Palette<select id="paletteSelect"><option value="aurora">Aurora</option><option value="fire">Fuoco</option><option value="ice">Ghiaccio</option><option value="mono">Monocromo</option><option value="psy">Prisma</option></select></label>
+      <label>Iterazioni <output id="iterOut">180</output><input id="iterations" type="range" min="40" max="700" step="10" value="180"></label>
+      <label>Dettaglio <output id="detailOut">1×</output><input id="detail" type="range" min="1" max="3" step="1" value="1"></label>
+      <div class="actions"><button id="centerBtn">Centra</button><button id="saveBtn" class="primary">Salva PNG</button></div>
+      <p class="note">Suggerimento: usa due dita per ingrandire o ridurre. Tocca due volte per zoomare in un punto.</p>
+      <div class="status" id="status">Rendering WebGL attivo</div>
+    </aside>
+    <div id="scrim"></div>
+  </main>
+  <script src="js/telegram.js"></script><script src="js/fractal-engine.js"></script><script src="js/app.js"></script>
+</body></html>

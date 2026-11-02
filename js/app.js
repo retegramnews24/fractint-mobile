@@ -1,1 +1,21 @@
-
+(() => {
+ const canvas=document.getElementById('fractal');const engine=new FractalEngine(canvas);const $=id=>document.getElementById(id);
+ const state={x:-.5,y:0,scale:1.65,iter:180,formula:0,palette:0,detail:1};let raf=0;
+ const names=['MANDELBROT','JULIA','BURNING SHIP'];const palettes=['aurora','fire','ice','mono','psy'];
+ function render(){cancelAnimationFrame(raf);raf=requestAnimationFrame(()=>{engine.render(state);$('zoomLabel').textContent='ZOOM '+(1.65/state.scale).toFixed(2)+'×';$('formulaLabel').textContent=names[state.formula];});}
+ function setFormula(v){state.formula=['mandelbrot','julia','burning'].indexOf(v);$('formulaSelect').value=v;document.querySelectorAll('.formula').forEach(b=>b.classList.toggle('active',b.dataset.formula===v));render();}
+ $('menuBtn').onclick=()=>togglePanel(true);$('closePanel').onclick=()=>togglePanel(false);$('scrim').onclick=()=>togglePanel(false);
+ function togglePanel(on){$('panel').classList.toggle('open',on);$('panel').setAttribute('aria-hidden',String(!on));$('scrim').classList.toggle('show',on);}
+ $('resetBtn').onclick=$('centerBtn').onclick=()=>{state.x=-.5;state.y=0;state.scale=1.65;render();};
+ document.querySelectorAll('.formula').forEach(b=>b.onclick=()=>setFormula(b.dataset.formula));$('formulaSelect').onchange=e=>setFormula(e.target.value);
+ $('paletteSelect').onchange=e=>{state.palette=palettes.indexOf(e.target.value);render();};$('iterations').oninput=e=>{state.iter=+e.target.value;$('iterOut').textContent=state.iter;render();};$('detail').oninput=e=>{state.detail=+e.target.value;$('detailOut').textContent=state.detail+'×';render();};
+ let pointers=new Map(),gesture=null,lastTap=0;
+ function point(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
+ function world(p){const aspect=canvas.clientWidth/canvas.clientHeight;return{x:state.x+(p.x/canvas.clientWidth-.5)*2*aspect*state.scale,y:state.y+(.5-p.y/canvas.clientHeight)*2*state.scale};}
+ canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);const p=point(e);pointers.set(e.pointerId,p);if(pointers.size===1)gesture={p,start:{x:state.x,y:state.y},scale:state.scale};else if(pointers.size===2){const a=[...pointers.values()];gesture={dist:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),scale:state.scale,mid:{x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2},center:{x:state.x,y:state.y}};} });
+ canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;const p=point(e);pointers.set(e.pointerId,p);if(pointers.size===1&&gesture?.p){const dx=p.x-gesture.p.x,dy=p.y-gesture.p.y;const a=canvas.clientWidth/canvas.clientHeight;state.x=gesture.start.x-dx/canvas.clientHeight*2*gesture.scale*a;state.y=gesture.start.y+dy/canvas.clientHeight*2*gesture.scale;render();}else if(pointers.size>=2&&gesture?.dist){const a=[...pointers.values()];const dist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);const mid={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};const oldWorld={x:gesture.center.x+(gesture.mid.x/canvas.clientWidth-.5)*2*(canvas.clientWidth/canvas.clientHeight)*gesture.scale,y:gesture.center.y+(.5-gesture.mid.y/canvas.clientHeight)*2*gesture.scale};state.scale=Math.max(.000001,Math.min(1000000,gesture.scale*gesture.dist/dist));state.x=oldWorld.x-(mid.x/canvas.clientWidth-.5)*2*(canvas.clientWidth/canvas.clientHeight)*state.scale;state.y=oldWorld.y-(.5-mid.y/canvas.clientHeight)*2*state.scale;render();}});
+ function release(e){pointers.delete(e.pointerId);if(pointers.size===0){gesture=null;const now=Date.now();if(now-lastTap<320){const p=point(e),w=world(p);state.x=w.x;state.y=w.y;state.scale*=.55;render();}lastTap=now;}else if(pointers.size===1){const p=[...pointers.values()][0];gesture={p,start:{x:state.x,y:state.y},scale:state.scale};}}
+ canvas.addEventListener('pointerup',release);canvas.addEventListener('pointercancel',release);
+ $('saveBtn').onclick=()=>{try{const a=document.createElement('a');a.download='fractint-mobile.png';a.href=canvas.toDataURL('image/png');a.click();$('status').textContent='Immagine PNG salvata';}catch(e){$('status').textContent='Impossibile esportare: '+e.message;}};
+ if(!engine.ok){$('status').textContent='WebGL non disponibile in questo browser';}window.addEventListener('resize',render);render();
+})();
