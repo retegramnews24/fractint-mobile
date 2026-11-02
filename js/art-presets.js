@@ -67,5 +67,16 @@ window.FRACTAL_ART_PRESETS = [
 ,{id:'reaction-garden',title:'Reaction Garden',subtitle:'Coralli di colore che si formano',fractal:'gray-scott',mood:'random',scene:'reaction',palette:'aurora',cx:0,cy:0,scale:2.5,iterations:8}
 ,{id:'cellular-life',title:'Cellular Life',subtitle:'La vita nasce da regole semplici',fractal:'game-of-life',mood:'random',scene:'life',palette:'neon',cx:0,cy:0,scale:2.5,iterations:8}
 ,{id:'rule110-machine',title:'Rule 110 Machine',subtitle:'La geometria del calcolo',fractal:'rule110',mood:'random',scene:'rule110',palette:'gold',cx:0,cy:0,scale:2,iterations:8}
-,{id:'logistic-symphony',title:'Logistic Symphony',subtitle:'Dal ritmo al caos',fractal:'logistic-bifurcation',mood:'chaos',scene:'bifurcation',palette:'fire',cx:3.25,cy:.5,scale:1.55,iterations:8}
+,{id:'logistic-symphony',title:'Logistic Symphony',subtitle:'Dal ritmo al caos',fractal:'logistic-bifurcation',mood:'chaos',scene:'bifurcation',palette:'fire',cx:3.25,cy:.5,scale:1.55,iterations:8},
+
+ {id:'multibrot-crown',title:'Crown of Powers',subtitle:'Multibrot · una corona di mondi',fractal:'multibrot',mood:'cosmos',scene:'prism',palette:'neon',cx:-.1,cy:0,scale:3.2,iterations:290,power:3},
+ {id:'perpendicular-ember',title:'Ember Reflection',subtitle:'Perpendicular Burning Ship · specchi di fuoco',fractal:'perpendicular',mood:'cosmos',scene:'ember',palette:'fire',cx:-.4,cy:0,scale:3.2,iterations:290},
+ {id:'magnet-petals',title:'Magnetic Petals',subtitle:'Magnet I · giardini magnetici',fractal:'magnet',mood:'floral',scene:'rose',palette:'candy',cx:0,cy:0,scale:4,iterations:230},
+ {id:'magnet-second',title:'Magnetic Symphony',subtitle:'Magnet II · geometrie in movimento',fractal:'magnet2',mood:'floral',scene:'opal',palette:'aurora',cx:0,cy:0,scale:4,iterations:210},
+ {id:'biomorph-dream',title:'Biomorphic Garden',subtitle:'Biomorph · forme organiche',fractal:'biomorph',mood:'nature',scene:'coral',palette:'aurora',cx:0,cy:0,scale:3.2,iterations:260},
+ {id:'mcmullen-crown',title:'Orbital Crown',subtitle:'McMullen · aureole razionali',fractal:'mcmullen',mood:'cosmos',scene:'gold',palette:'gold',cx:0,cy:0,scale:4,iterations:220},
+ {id:'lambda-light',title:'Lambda Light',subtitle:'Lambda · energia ricorsiva',fractal:'lambda',mood:'cosmos',scene:'nebula',palette:'cosmic',cx:0,cy:0,scale:3.2,iterations:220},
+ {id:'levy-crystal',title:'Lévy Crystal',subtitle:'Curva di Lévy C · geometrie di ghiaccio',fractal:'levy',mood:'geometry',scene:'ice',palette:'ocean',cx:0,cy:0,scale:2.7,iterations:14},
+ {id:'cantor-horizon',title:'Cantor Horizon',subtitle:'Insieme di Cantor · l’infinito discreto',fractal:'cantor',mood:'geometry',scene:'lace',palette:'gold',cx:0,cy:0,scale:2.2,iterations:8},
+ {id:'vicsek-stars',title:'Vicsek Stars',subtitle:'Vicsek · stelle geometriche',fractal:'vicsek',mood:'geometry',scene:'snow',palette:'neon',cx:0,cy:0,scale:2.5,iterations:8}
 ];

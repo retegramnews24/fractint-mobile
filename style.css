@@ -164,3 +164,14 @@ body.art-only .render-overlay.show ~ .export-dock{opacity:0}
 .save-sheet p{font-size:11px;line-height:1.5;color:#cdbadf;margin:11px 0}.save-sheet img{display:block;width:100%;height:auto;max-height:32dvh;object-fit:contain;border-radius:9px;background:#05030a;-webkit-touch-callout:default;user-select:auto}
 body.art-only .save-sheet{display:block!important}
 @media(max-width:500px){.export-dock{bottom:calc(env(safe-area-inset-bottom,0px) + 10px);}.save-sheet{bottom:calc(env(safe-area-inset-bottom,0px) + 8px)}}
+
+/* v4.7 — una sola collezione: menu laterale rimosso, ricerca rapida e A—Z. */
+.gallery-tools{display:flex;align-items:center;gap:10px;min-width:0}
+.art-search-wrap{display:flex;align-items:center;gap:5px;height:28px;width:min(210px,35vw);padding:0 9px;border-radius:15px;background:#ffffff0a;border:1px solid #ffffff1e;color:#b09ac7}
+.art-search-wrap span{font-size:18px;line-height:1}
+.art-search-wrap input{width:100%;min-width:0;background:transparent;border:0;outline:0;color:#f6ebff;font:11px var(--sans);appearance:none}
+.art-search-wrap input::placeholder{color:#9784a9}
+.art-search-wrap input::-webkit-search-cancel-button{filter:grayscale(1) brightness(2)}
+.gallery-empty{display:flex;align-items:center;padding:10px 14px;font-size:12px;color:#aa96bc}
+@media(max-width:760px){.gallery-tools{gap:7px}.art-search-wrap{width:clamp(100px,33vw,180px);height:26px;padding:0 7px}.art-search-wrap input{font-size:10px}.art-search-wrap input::placeholder{color:#9784a9}.gallery-heading h2{font-size:14px}.gallery-count{white-space:nowrap;font-size:9px}}
+@media(max-width:350px){.art-search-wrap{width:100px}.gallery-heading h2{font-size:13px}.gallery-tools{gap:4px}}

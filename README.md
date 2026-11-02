@@ -58,3 +58,12 @@ Licensed under the terms of `LICENSE`.
 - **Salvataggio**: seleziona Normale / HD / Ultra nel controllo in basso, premi **Salva PNG**. Dopo il calcolo compare **una sola finestra**: **Condividi / Salva** (se la condivisione file Web Share è supportata), **Scarica PNG** e l'immagine su cui è possibile effettuare pressione prolungata.
 - Le Mini App Telegram non possono salvare direttamente in una cartella arbitraria di Telegram o bypassare le restrizioni WebView: selezionare la destinazione dipende dal sistema Android. Per archiviare in Telegram, scegli **Messaggi salvati** dalla schermata di condivisione quando disponibile.
 - Quando è necessario generare un PNG di grandi dimensioni prima della condivisione nativa, l'utente deve premere **Condividi / Salva** dopo la preparazione del file per rispettare l'attivazione utente richiesta dalla Web Share API.
+
+## v4.7 — Collezione A—Z e avvio sempre diverso
+
+- Rimosso il menu laterale delle formule e la relativa icona in alto a sinistra: tutte le forme si scelgono attraverso **LA COLLEZIONE**.
+- Opere in ordine alfabetico italiano, anche filtrando per famiglia.
+- Ricerca rapida per titolo artistico e nome matematico originale (es. Sierpiński, McMullen, Vicsek).
+- Aggiunte 10 nuove opere per coprire le 10 formule prima assenti dalla galleria: **77 opere, 71 formule distinte**. Le sei opere aggiuntive rispetto alle formule sono variazioni artistiche di famiglie già presenti.
+- All’avvio sceglie un'opera da un ciclo casuale persistente, senza ripeterla in aperture successive fino a completamento del ciclo (salvo cancellazione della memoria del browser). La prima opera viene centrata anche nella striscia della collezione.
+- Il rendering, splash, fullscreen, pinch, rotazione e generazione PNG di v4.6 sono mantenuti.
