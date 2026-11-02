@@ -2,10 +2,11 @@
 const $=id=>document.getElementById(id),catalog=window.FRACTAL_CATALOG;let active=catalog[0],category='all',job=0,worker=null,renderer3d=null,centerX=-.5,centerY=0,scale=3.2,iterations=220,power=2,palette='cosmic',juliaReal=-.8,juliaImag=.156,quality=.7,drag=null,pinch=null,renderTimer=0,is3d=false,collapsed=false,deepEnabled=false,deepBits=512,deepCx=0n,deepCy=0n,deepScale=0n,favorites=new Set(JSON.parse(localStorage.getItem('fractint-favorites')||'[]'));
 const canvas2d=$('canvas2d'),canvas3d=$('canvas3d'),previewCanvas=$('previewCanvas'),stage=$('visualStage');
 let lastFrame=null,lastRenderView=null,activeRenderView=null,previewActive=false;
-const captureProfiles={screen:{factor:1,budget:3_500_000,label:'SCHERMO'},hd:{factor:1.5,budget:5_500_000,label:'HD'},qhd:{factor:2,budget:7_500_000,label:'QHD'},ultra:{factor:2.5,budget:10_000_000,label:'ULTRA'}};
-let captureQuality=localStorage.getItem('fae-capture-quality')||'hd';
-if(!captureProfiles[captureQuality])captureQuality='hd';
-let renderProgressTimer=0,renderHideTimer=0,renderStartedAt=0,renderEstimateMs=3500,renderHasWorkerProgress=false,renderToken=0,captureRenderArmed=false;
+const captureProfiles={screen:{factor:1,budget:3_000_000,label:'NORMALE'},hd:{factor:2,budget:8_000_000,label:'HD'},ultra:{factor:3,budget:12_000_000,label:'ULTRA'}};
+let captureQuality='hd';
+let renderProgressTimer=0,renderHideTimer=0,renderStartedAt=0,renderEstimateMs=3500,renderHasWorkerProgress=false,renderToken=0;
+let exportWorker=null,exportInProgress=false,exportBusyToken=0,exportDockTimer=0,fullscreenResizeTimer=0,fullscreenViewport=null,normalExitViewport=null,fullscreenPendingRender=false;
+function getCaptureProfile(){return captureProfiles[captureQuality]||captureProfiles.hd;}
 const qFactor=()=>1n<<BigInt(deepBits);
 function getCaptureProfile(){return captureProfiles[captureQuality]||captureProfiles.hd;}
 function getRenderTarget(rect,highQuality=false,for3d=false){
@@ -34,7 +35,7 @@ function showLoader(msg='CALCOLO IN CORSO',estimateMs=3500){
  renderProgressTimer=setInterval(()=>{if(token!==renderToken||renderHasWorkerProgress)return;const elapsed=performance.now()-renderStartedAt;const estimated=4+90*(1-Math.exp(-elapsed/renderEstimateMs));setRenderProgress(Math.min(94,estimated));},120);
 }
 function workerProgress(value){renderHasWorkerProgress=true;setRenderProgress(value);}
-function finishLoader(){clearInterval(renderProgressTimer);renderHasWorkerProgress=true;setRenderProgress(100);const token=renderToken;clearTimeout(renderHideTimer);renderHideTimer=setTimeout(()=>{if(token===renderToken)hideLoader();},420);}
+function finishLoader(){clearInterval(renderProgressTimer);renderHasWorkerProgress=true;setRenderProgress(100);const token=renderToken;clearTimeout(renderHideTimer);renderHideTimer=setTimeout(()=>{if(token===renderToken){hideLoader();if(artOnly&&!exportInProgress)showExportDock(5000);}},420);}
 function hideLoader(){clearInterval(renderProgressTimer);clearTimeout(renderHideTimer);$('renderOverlay').classList.remove('show');$('engineStatus').innerHTML='<i></i> ENGINE READY';}
 function numberToFixed(n,bits=deepBits){const q=1n<<BigInt(bits),den=1000000000000000n,num=BigInt(Math.round(n*1e15));return num*q/den;}
 function fixedToNumber(v,bits=deepBits){if(v===0n)return 0;const shift=Math.max(0,bits-44),sv=v>>BigInt(shift);return Number(sv)/Math.pow(2,bits-shift);}
@@ -57,15 +58,41 @@ function draw2d(hd=false){if(is3d){draw3d(hd);return;}if(!worker)initWorker();if
  if(deepEnabled){const baseSide=deepBits>=1024?340:deepBits>=512?460:deepBits>=256?620:820;const maxSide=Math.min(1500,Math.round(baseSide*(highQuality?Math.sqrt(target.profile.factor):1)));const basePixels=deepBits>=1024?520000:deepBits>=512?760000:deepBits>=256?980000:1300000;const deepBudget=Math.min(1800000,Math.round(basePixels*(highQuality?target.profile.factor:1)));const shrink=Math.min(1,maxSide/Math.max(w,h),Math.sqrt(deepBudget/(w*h)));w=Math.max(96,Math.round(w*shrink));h=Math.max(96,Math.round(h*shrink));const iterCap=deepBits>=1024?700:deepBits>=512?900:deepBits>=256?1050:1200;renderIterations=Math.min(iterations,iterCap);}
  if(canvas2d.width!==w)canvas2d.width=w;if(canvas2d.height!==h)canvas2d.height=h;
  job++;activeRenderView=getViewState();const mp=w*h/1000000;const weight=deepEnabled?4.2:Math.max(.45,renderIterations/220);const estimate=Math.min(45000,Math.max(900,mp*weight*(active.mode==='3D'?300:1350)));
- if(!artOnly||highQuality)showLoader(deepEnabled?'DEEP ZOOM · '+deepBits+' BIT':'RENDERING ARTWORK',estimate);else hideLoader();$('renderQualityHint').textContent=`${w} × ${h} · ${mp.toFixed(1)} MP · ${highQuality?target.profile.label:'ANTEPRIMA'}`;
+ const showProgress=fullscreenPendingRender||!artOnly||highQuality;fullscreenPendingRender=false;
+ if(showProgress)showLoader(deepEnabled?'DEEP ZOOM · '+deepBits+' BIT':'RENDERING ARTWORK',estimate);else hideLoader();$('renderQualityHint').textContent=`${w} × ${h} · ${mp.toFixed(1)} MP · ${highQuality?target.profile.label:'ANTEPRIMA'}`;
  const cfg={job,width:w,height:h,type:active.id,cx:centerX,cy:centerY,scale,baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,iterations:renderIterations,power,juliaReal,juliaImag,palette,deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?deepScale.toString():'0'};worker.postMessage(cfg);updateHUD();}
-function getViewState(){return {id:active.id,cx:centerX,cy:centerY,scale,deep:deepEnabled,bits:deepBits,dcx:deepCx,dcy:deepCy,dscale:deepScale};}
+function getViewState(){const r=stage.getBoundingClientRect();return {id:active.id,cx:centerX,cy:centerY,scale,deep:deepEnabled,bits:deepBits,dcx:deepCx,dcy:deepCy,dscale:deepScale,stageW:r.width,stageH:r.height};}
 function clearPreview(){if(!previewCanvas)return;previewCanvas.width=1;previewCanvas.height=1;previewCanvas.hidden=true;previewActive=false;}
 function ratioBigInt(a,b){if(b===0n)return 1;const neg=(a<0n)!==(b<0n),aa=a<0n?-a:a,bb=b<0n?-b:b;if(bb===0n)return 1;const q=(aa<<40n)/bb;let v=Number(q)/Math.pow(2,40);if(!Number.isFinite(v))v=1e6;v=Math.min(1e6,v);return neg?-v:v;}
-function updatePreview(){if(is3d||!lastFrame||!lastRenderView||lastRenderView.id!==active.id||!previewCanvas)return;const w=canvas2d.width,h=canvas2d.height;if(previewCanvas.width!==w)previewCanvas.width=w;if(previewCanvas.height!==h)previewCanvas.height=h;const ctx=previewCanvas.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,w,h);ctx.fillStyle='#03050c';ctx.fillRect(0,0,w,h);const min=Math.min(w,h);let ratio,shiftX,shiftY;if(deepEnabled||lastRenderView.deep){const bits=deepEnabled?deepBits:lastRenderView.bits;let oldCx=lastRenderView.deep?fixedRescale(lastRenderView.dcx,lastRenderView.bits,bits):numberToFixed(lastRenderView.cx,bits);let oldCy=lastRenderView.deep?fixedRescale(lastRenderView.dcy,lastRenderView.bits,bits):numberToFixed(lastRenderView.cy,bits);let oldScale=lastRenderView.deep?fixedRescale(lastRenderView.dscale,lastRenderView.bits,bits):numberToFixed(lastRenderView.scale,bits);let newCx=deepEnabled?deepCx:numberToFixed(centerX,bits),newCy=deepEnabled?deepCy:numberToFixed(centerY,bits),newScale=deepEnabled?deepScale:numberToFixed(scale,bits);ratio=ratioBigInt(oldScale,newScale);shiftX=ratioBigInt(oldCx-newCx,newScale);shiftY=ratioBigInt(oldCy-newCy,newScale);}else{ratio=lastRenderView.scale/scale;shiftX=(lastRenderView.cx-centerX)/scale;shiftY=(lastRenderView.cy-centerY)/scale;}ratio=Math.max(.0001,Math.min(1e6,ratio));const tx=w/2*(1-ratio)+shiftX*min,ty=h/2*(1-ratio)+shiftY*min;ctx.setTransform(ratio,0,0,ratio,tx,ty);ctx.imageSmoothingEnabled=true;ctx.drawImage(lastFrame,0,0,w,h);previewCanvas.hidden=false;previewActive=true;}
-
+function updatePreview(){
+ if(!lastFrame||!lastRenderView||lastRenderView.id!==active.id||!previewCanvas||is3d)return;
+ const rect=stage.getBoundingClientRect();if(rect.width<1||rect.height<1)return;
+ const d=Math.min(window.devicePixelRatio||1,1.5),w=Math.max(1,Math.round(rect.width*d)),h=Math.max(1,Math.round(rect.height*d));
+ if(previewCanvas.width!==w)previewCanvas.width=w;if(previewCanvas.height!==h)previewCanvas.height=h;
+ const ctx=previewCanvas.getContext('2d');ctx.resetTransform?.();ctx.clearRect(0,0,w,h);ctx.fillStyle='#03050c';ctx.fillRect(0,0,w,h);
+ const old=lastRenderView,oldW=old.stageW||rect.width,oldH=old.stageH||rect.height;
+ const oldMin=Math.min(oldW,oldH),newMin=Math.min(rect.width,rect.height);
+ let oldScale=old.scale,newScale=scale,dx=0,dy=0;
+ if(deepEnabled||old.deep){const bits=deepEnabled?deepBits:old.bits;
+  const os=old.deep?fixedRescale(old.dscale,old.bits,bits):numberToFixed(old.scale,bits);
+  const ns=deepEnabled?deepScale:numberToFixed(scale,bits);
+  oldScale=ratioBigInt(os,ns);newScale=1;
+  const ocx=old.deep?fixedRescale(old.dcx,old.bits,bits):numberToFixed(old.cx,bits);
+  const ocy=old.deep?fixedRescale(old.dcy,old.bits,bits):numberToFixed(old.cy,bits);
+  const ncx=deepEnabled?deepCx:numberToFixed(centerX,bits),ncy=deepEnabled?deepCy:numberToFixed(centerY,bits);
+  dx=ratioBigInt(ocx-ncx,ns)*newMin;
+  dy=ratioBigInt(ocy-ncy,ns)*newMin;
+ }else{dx=(old.cx-centerX)*newMin/newScale;dy=(old.cy-centerY)*newMin/newScale;}
+ let ratio=(oldScale/newScale)*(newMin/oldMin);
+ ratio=Math.max(0.00001,Math.min(100000,ratio));
+ ctx.imageSmoothingEnabled=true;
+ const destW=oldW*ratio,destH=oldH*ratio;
+ const px=(rect.width/2+dx-destW/2)*d,py=(rect.height/2+dy-destH/2)*d;
+ ctx.drawImage(lastFrame,px,py,destW*d,destH*d);
+ previewCanvas.hidden=false;previewActive=true;
+}
 function resize3d(highQuality=false){if(!renderer3d||!renderer3d.ok)return;if(highQuality){const target=getRenderTarget(stage.getBoundingClientRect(),true,true);renderer3d.resize(target.width,target.height);}else renderer3d.resize();}
-function draw3d(highQuality=false){if(!renderer3d||!renderer3d.ok)return;const target=highQuality?getRenderTarget(stage.getBoundingClientRect(),true,true):null;const estimate=Math.max(800,Math.min(12000,(target?target.pixels:canvas3d.width*canvas3d.height)/1000000*1700));if(!artOnly||highQuality)showLoader('SCULTURA IN RENDERING',estimate);else hideLoader();$('renderQualityHint').textContent=target?`${target.width} × ${target.height} · ${(target.pixels/1e6).toFixed(1)} MP · ${target.profile.label}`:'RENDER GPU';requestAnimationFrame(()=>{if(highQuality&&target)renderer3d.resize(target.width,target.height);renderer3d.set({kind:active.id==='mandelbulb'?0:active.id==='menger'?1:active.id==='mandelbox'?2:3,power:+$('threePower').value,detail:+$('threeDetail').value,palette:['cosmic','fire','ocean','aurora','mono','candy','gold','neon'].indexOf(palette)});workerProgress(82);requestAnimationFrame(()=>{try{renderer3d.gl?.finish();}catch(_){}finishLoader();$('renderStat').textContent='WebGL2 GPU';});});}
+function draw3d(highQuality=false){if(!renderer3d||!renderer3d.ok)return;const target=highQuality?getRenderTarget(stage.getBoundingClientRect(),true,true):null;const estimate=Math.max(800,Math.min(12000,(target?target.pixels:canvas3d.width*canvas3d.height)/1000000*1700));const showProgress=fullscreenPendingRender||!artOnly||highQuality;fullscreenPendingRender=false;if(showProgress)showLoader('SCULTURA IN RENDERING',estimate);else hideLoader();$('renderQualityHint').textContent=target?`${target.width} × ${target.height} · ${(target.pixels/1e6).toFixed(1)} MP · ${target.profile.label}`:'RENDER GPU';requestAnimationFrame(()=>{if(highQuality&&target)renderer3d.resize(target.width,target.height);renderer3d.set({kind:active.id==='mandelbulb'?0:active.id==='menger'?1:active.id==='mandelbox'?2:3,power:+$('threePower').value,detail:+$('threeDetail').value,palette:['cosmic','fire','ocean','aurora','mono','candy','gold','neon'].indexOf(palette)});workerProgress(82);requestAnimationFrame(()=>{try{renderer3d.gl?.finish();}catch(_){}finishLoader();$('renderStat').textContent='WebGL2 GPU';});});}
 function scheduleDraw(hd=false){if(!is3d){job++;updatePreview();}clearTimeout(renderTimer);const highQuality=!!hd;renderTimer=setTimeout(()=>is3d?draw3d(highQuality):draw2d(highQuality),45);}
 function updateHUD(){const z=zoomDisplay();$('zoomLabel').textContent='ZOOM '+(is3d?renderer3d?.zoom.toFixed(2)+'×':z);$('coordLabel').textContent='x: '+(deepEnabled?centerX.toPrecision(7):centerX.toFixed(5))+' · y: '+(deepEnabled?centerY.toPrecision(7):centerY.toFixed(5));$('positionStat').textContent=centerX.toFixed(3)+' / '+centerY.toFixed(3);$('zoomStat').textContent=is3d?renderer3d?.zoom.toFixed(2)+'×':z;$('precisionLabel').textContent=is3d?'WEBGL2 GPU':deepEnabled?'BIGINT '+deepBits+' BIT':'CPU / WORKER';}
 function updateStats(){updateHUD();$('renderStat').textContent=is3d?'WebGL2 GPU':'Canvas CPU / Worker';}
@@ -78,41 +105,143 @@ function resetView(){centerX=active.center[0];centerY=active.center[1];scale=act
 function toggleFavorite(){if(favorites.has(active.id))favorites.delete(active.id);else favorites.add(active.id);localStorage.setItem('fractint-favorites',JSON.stringify([...favorites]));$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';renderLibrary();}
 function showFormulaInfo(){const f=active;$('modalContent').innerHTML=`<div class="modal-kicker">${f.group.toUpperCase()} · ${f.mode}</div><h2>${f.name}</h2><div class="formula-equation">${f.formula}</div><p>${f.description}</p><div class="modal-grid"><div><span>FAMIGLIA</span><b>${f.category}</b></div><div><span>RENDERER</span><b>${f.mode==='3D'?'WebGL2 ray marching':'CPU multithread / worker'}</b></div><div><span>POSIZIONE X</span><b>${centerX.toFixed(6)}</b></div><div><span>ZOOM</span><b>${is3d?renderer3d.zoom.toFixed(3)+'×':zoomDisplay()}</b></div></div>`;openModal();}
 function openModal(){ $('modalBackdrop').classList.add('open');}function closeModal(){$('modalBackdrop').classList.remove('open');}
-function openCaptureQualityMenu(){
- const choices=[['screen','SCHERMO','Risoluzione naturale del display','Rapido'],['hd','HD','Fino a 1,5× con più dettaglio','Consigliato'],['qhd','QHD','Fino a 2× per immagini più pulite','Alta qualità'],['ultra','ULTRA','Fino a 2,5× con limite automatico','Massima qualità']];
- $('modalContent').innerHTML=`<div class="modal-kicker">IMPOSTAZIONI VISIVE</div><h2>Qualità dello screenshot</h2><p>Scegli il profilo di qualità, poi premi ⛶: il render ad alta qualità partirà una sola volta, con percentuale di completamento. Senza una scelta esplicita, ⛶ entra subito nella tela senza ricalcoli.</p><div class="capture-choice-grid">${choices.map(([id,title,desc,tag])=>`<button class="capture-choice ${captureQuality===id?'selected':''}" data-capture-quality="${id}"><span><b>${title}</b><small>${desc}</small></span><em>${tag}</em></button>`).join('')}</div>`;
- $('modalContent').querySelectorAll('[data-capture-quality]').forEach(button=>button.addEventListener('click',()=>{captureQuality=button.dataset.captureQuality;localStorage.setItem('fae-capture-quality',captureQuality);$('captureQuality').value=captureQuality;$('captureQualityValue').value=getCaptureProfile().label;$('qualityMenuBtn').textContent=captureQuality==='screen'?'STD':captureQuality.toUpperCase();closeModal();captureRenderArmed=true;showToast('Qualità '+getCaptureProfile().label+' pronta · premi ⛶ per renderizzare');}));
- openModal();
-}
+// Fullscreen = expand the existing world coordinates, never stretch or crop a snapshot.
 let artOnly=false,pressExitTimer=0,tgBackHandler=null;
+function screenGeometry(){const r=stage.getBoundingClientRect();return {width:r.width,height:r.height,short:Math.max(1,Math.min(r.width,r.height))};}
+function scaleForViewport(before,after){if(!before||!after||before.short<1||after.short<1)return;
+ const factor=after.short/before.short;
+ if(is3d&&renderer3d){renderer3d.zoom=Math.max(.15,Math.min(20,renderer3d.zoom*before.height/Math.max(1,after.height)));}
+ else if(deepEnabled){deepScale=deepScale*BigInt(Math.round(factor*1000000))/1000000n;updateDeepApprox();}
+ else scale*=factor;
+ updateHUD();
+}
+function setupFullViewport(){
+ if(!artOnly)return;
+ const after=screenGeometry(),before=fullscreenViewport||after;
+ if(Math.abs(after.width-before.width)<.5&&Math.abs(after.height-before.height)<.5)return;
+ scaleForViewport(before,after);fullscreenViewport=after;
+ // Keep the old image at its original visual size, centered; render only adds the newly exposed world area.
+ if(!is3d)updatePreview();
+ fullscreenPendingRender=true;
+ if(is3d)draw3d(false);else scheduleDraw(false);
+}
+function triggerFullscreenResize(){if(!artOnly)return;clearTimeout(fullscreenResizeTimer);fullscreenResizeTimer=setTimeout(setupFullViewport,90);}
+function showExportDock(duration=4800){if(!artOnly||exportInProgress)return;
+ const d=$('exportDock');d.hidden=false;d.classList.remove('dock-idle');clearTimeout(exportDockTimer);
+ if(duration)exportDockTimer=setTimeout(()=>{if($('exportOptions').hidden)d.classList.add('dock-idle');},duration);
+}
+function hideExportDock(){clearTimeout(exportDockTimer);$('exportOptions').hidden=true;$('exportDockButton').setAttribute('aria-expanded','false');$('exportDock').hidden=true;}
 async function toggleArtOnly(force){
- const next=typeof force==='boolean'?force:!artOnly,tg=window.Telegram?.WebApp;
- if(next===artOnly)return;
+ const next=typeof force==='boolean'?force:!artOnly,tg=window.Telegram?.WebApp;if(next===artOnly)return;
  if(next){
-  const runCaptureRender=captureRenderArmed;captureRenderArmed=false;
+  clearTimeout(renderTimer);normalExitViewport=null;
+  fullscreenViewport=screenGeometry();
+  // Prevent a pending worker response from overwriting the current view during the geometry transition.
+  job++;
   artOnly=true;document.body.classList.add('art-only');$('fullscreenBtn').setAttribute('aria-pressed','true');
+  const targetRect=stage.getBoundingClientRect();
+  scaleForViewport(fullscreenViewport,{...targetRect,short:Math.max(1,Math.min(targetRect.width,targetRect.height))});
+  fullscreenViewport=screenGeometry();
+  if(!is3d)updatePreview();
+  fullscreenPendingRender=true;
   try{
    if(tg&&tg.isVersionAtLeast?.('8.0')&&typeof tg.requestFullscreen==='function'){
     tg.setHeaderColor?.('#000000');tg.setBackgroundColor?.('#000000');tg.requestFullscreen();
-   }else if(!document.fullscreenElement&&document.documentElement.requestFullscreen){await document.documentElement.requestFullscreen({navigationUI:'hide'});}
-  }catch(e){console.warn('Fullscreen API fallback:',e);}
+   }else if(!document.fullscreenElement&&document.documentElement.requestFullscreen){
+    await document.documentElement.requestFullscreen({navigationUI:'hide'});
+   }
+  }catch(e){console.warn('Fullscreen API:',e);}
   if(tg?.BackButton){tgBackHandler=()=>toggleArtOnly(false);tg.BackButton.onClick(tgBackHandler);tg.BackButton.show();}
-  // Fullscreen itself never starts work. Only an explicitly selected profile
-  // arms one high-quality render, after the fullscreen viewport has settled.
-  if(runCaptureRender)requestAnimationFrame(()=>requestAnimationFrame(()=>{if(artOnly){if(is3d)draw3d(true);else draw2d(true);}}));
+  triggerFullscreenResize();
+  requestAnimationFrame(()=>{triggerFullscreenResize();if(!is3d)updatePreview();if(is3d)draw3d(false);else scheduleDraw(false);});
+  hideExportDock();
  }else{
-  artOnly=false;document.body.classList.remove('art-only');$('fullscreenBtn').setAttribute('aria-pressed','false');
+  clearTimeout(fullscreenResizeTimer);
+  const before=fullscreenViewport||screenGeometry();
+  artOnly=false;fullscreenPendingRender=false;hideExportDock();document.body.classList.remove('art-only');$('fullscreenBtn').setAttribute('aria-pressed','false');
+  const after=screenGeometry();scaleForViewport(before,after);
+  fullscreenViewport=null;normalExitViewport=after;
+  if(!is3d)updatePreview();
   if(tg?.BackButton){try{tg.BackButton.hide();if(tgBackHandler)tg.BackButton.offClick?.(tgBackHandler);}catch(_){}tgBackHandler=null;}
   try{if(tg?.isFullscreen&&typeof tg.exitFullscreen==='function')tg.exitFullscreen();else if(document.fullscreenElement&&document.exitFullscreen)await document.exitFullscreen();}catch(e){console.warn('Fullscreen exit:',e);}
   tg?.setHeaderColor?.('#0b1020');tg?.setBackgroundColor?.('#080b16');
-  requestAnimationFrame(()=>{if(is3d)resize3d(false);else scheduleDraw();});
+  requestAnimationFrame(()=>{if(is3d)draw3d(false);else scheduleDraw(false);});
  }
 }
-function armInvisibleExit(e){
- if(!artOnly)return;const r=stage.getBoundingClientRect();
- if(e.clientX>r.right-78&&e.clientY<r.top+78){clearTimeout(pressExitTimer);pressExitTimer=setTimeout(()=>toggleArtOnly(false),850);}
-}
+function armInvisibleExit(e){if(!artOnly)return;const r=stage.getBoundingClientRect();if(e.clientX>r.right-78&&e.clientY<r.top+78){clearTimeout(pressExitTimer);pressExitTimer=setTimeout(()=>toggleArtOnly(false),900);}}
 function disarmInvisibleExit(){clearTimeout(pressExitTimer);pressExitTimer=0;}
+function showExportOptions(){
+ if(!artOnly){$('exportDock').hidden=false;$('exportDock').classList.remove('dock-idle');}
+ else showExportDock(0);
+ const panel=$('exportOptions');panel.hidden=!panel.hidden;
+ $('exportDockButton').setAttribute('aria-expanded',String(!panel.hidden));
+ if(panel.hidden){if(!artOnly)hideExportDock();else showExportDock();}
+}
+function imageFileName(){return 'fractal-'+(activeArtId||active.id)+'-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';}
+function exportDimensions(){const r=stage.getBoundingClientRect(),profile=getCaptureProfile();
+ const pixelRatio=Math.max(1,window.devicePixelRatio||1),factor=profile.factor;
+ let w=Math.round(r.width*pixelRatio*factor),h=Math.round(r.height*pixelRatio*factor);
+ let budget=profile.budget;
+ if(navigator.deviceMemory&&navigator.deviceMemory<=4)budget=Math.round(budget*.68);
+ if(is3d)budget=Math.min(budget,captureQuality==='ultra'?2_600_000:captureQuality==='hd'?1_700_000:1_000_000);
+ const glMax=is3d&&renderer3d?.gl?renderer3d.gl.getParameter(renderer3d.gl.MAX_RENDERBUFFER_SIZE):8192;
+ let fit=Math.min(1,Math.sqrt(budget/(w*h)),Math.min(8192,glMax)/Math.max(w,h));
+ w=Math.max(120,Math.floor(w*fit));h=Math.max(120,Math.floor(h*fit));return {width:w,height:h,pixels:w*h};
+}
+function workerExportImage(cfg){return new Promise((resolve,reject)=>{
+ const current=++exportBusyToken;let finished=false;
+ const ew=new Worker('js/render-worker.js');exportWorker=ew;
+ const close=()=>{finished=true;ew.terminate();if(exportWorker===ew)exportWorker=null;};
+ ew.onmessage=ev=>{if(current!==exportBusyToken||finished)return;const m=ev.data;
+  if(m.progress!==undefined){setRenderProgress(Math.min(99,m.progress));return;}
+  if(m.error){close();reject(new Error(m.error));return;}
+  if(!m.pixels)return;
+  try{const cn=document.createElement('canvas');cn.width=m.width;cn.height=m.height;
+   cn.getContext('2d',{alpha:false}).putImageData(new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height),0,0);
+   cn.toBlob(blob=>{close();blob?resolve(blob):reject(new Error('Impossibile creare il PNG'));},'image/png');
+  }catch(error){close();reject(error);}
+ };
+ ew.onerror=error=>{close();reject(new Error('Worker PNG non disponibile'));};
+ ew.postMessage(cfg);
+ });}
+async function renderExportPNG(){const {width,height}=exportDimensions();
+ if(is3d){const cn=document.createElement('canvas');cn.width=width;cn.height=height;
+  const renderer=new FractInt3D(cn);if(!renderer.ok)throw new Error('WebGL2 non supportato');
+  renderer.rotX=renderer3d.rotX;renderer.rotY=renderer3d.rotY;renderer.zoom=renderer3d.zoom;
+  renderer.resize(width,height);
+  renderer.set({kind:active.id==='mandelbulb'?0:active.id==='menger'?1:active.id==='mandelbox'?2:3,power:+$('threePower').value,detail:+$('threeDetail').value,palette:['cosmic','fire','ocean','aurora','mono','candy','gold','neon'].indexOf(palette)});
+  renderer.gl.finish();setRenderProgress(92);
+  return await new Promise((resolve,reject)=>cn.toBlob(blob=>{renderer.gl.getExtension('WEBGL_lose_context')?.loseContext();blob?resolve(blob):reject(new Error('PNG GPU non disponibile'));},'image/png'));
+ }
+ const cfg={job:1,width,height,type:active.id,cx:centerX,cy:centerY,scale,baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,iterations,power,juliaReal,juliaImag,palette,
+ deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?deepScale.toString():'0'};
+ return await workerExportImage(cfg);
+}
+async function downloadArt(quality){
+ if(exportInProgress)return;
+ captureQuality=captureProfiles[quality]?quality:'hd';exportInProgress=true;hideExportDock();
+ showLoader('CREAZIONE IMMAGINE PNG',10000);setRenderProgress(0);
+ let blob=null;
+ try{
+  blob=await renderExportPNG();
+  finishLoader();
+  const name=imageFileName();const url=URL.createObjectURL(blob);
+  // Android WebViews differ: try the usual download, AND keep a manual long-press fallback.
+  const a=document.createElement('a');a.href=url;a.download=name;a.style.display='none';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),120000);
+  showToast('PNG creato · se Telegram non lo scarica, usa Anteprima');
+  showExportFallback(url,name);
+ }catch(e){hideLoader();showToast('Download non riuscito: '+(e?.message||e));}
+ finally{exportInProgress=false;setTimeout(()=>{if(artOnly)showExportDock(4300);},550);}
+}
+function showExportFallback(url,name){
+ const old=document.getElementById('imageSaveFallback');old?.remove();
+ const box=document.createElement('div');box.id='imageSaveFallback';box.className='image-save-fallback';
+ box.innerHTML='<div class="image-save-head"><b>Immagine PNG pronta</b><button type="button" aria-label="Chiudi">×</button></div><p>Se il download non parte in Telegram, tieni premuto sull’immagine per salvarla o condividerla.</p><img alt="Frattale pronto da salvare" /><a class="fallback-download">Scarica PNG</a>';
+ box.querySelector('img').src=url;const link=box.querySelector('a');link.href=url;link.download=name;
+ box.querySelector('button').onclick=()=>{box.remove();if(artOnly)showExportDock();};
+ document.body.appendChild(box);
+}
 
 function randomFractal(){let list=catalog.filter(f=>f.category!=='three');selectFormula(list[Math.floor(Math.random()*list.length)].id);}
 function bindRange(id,fn){$(id).addEventListener('input',e=>fn(+e.target.value));}
@@ -122,14 +251,20 @@ function setupInteractions(){
  bindRange('iterations',v=>{iterations=v;$('iterationsValue').value=v;scheduleDraw();});bindRange('power',v=>{power=v;$('powerValue').value=v.toFixed(1);scheduleDraw();});bindRange('juliaReal',v=>{juliaReal=v;$('juliaRealValue').value=v.toFixed(2);scheduleDraw();});bindRange('juliaImag',v=>{juliaImag=v;$('juliaImagValue').value=v.toFixed(3);scheduleDraw();});bindRange('quality',v=>{quality=v/100;$('qualityValue').value=v+'%';scheduleDraw();});bindRange('threePower',v=>{$('threePowerValue').value=v;if(renderer3d)renderer3d.power=v;scheduleDraw();});bindRange('threeDetail',v=>{$('threeDetailValue').value=v;if(renderer3d)renderer3d.detail=v;scheduleDraw();});
  $('palette').onchange=e=>{palette=e.target.value;scheduleDraw();};$('paletteCycle').onclick=()=>{let list=[...$('palette').options].map(o=>o.value),i=list.indexOf(palette);palette=list[(i+1)%list.length];$('palette').value=palette;scheduleDraw();};$('preset').onchange=e=>applyPreset(+e.target.value);
  $('resetBtn').onclick=resetView;$('zoomIn').onclick=()=>zoom(.7);$('zoomOut').onclick=()=>zoom(1.4);$('deepZoomBtn').onclick=()=>setDeepMode(!deepEnabled);$('deepPrecision').onchange=e=>setDeepPrecision(+e.target.value);$('randomBtn').onclick=randomFractal;$('favoriteBtn').onclick=toggleFavorite;$('formulaInfoBtn').onclick=showFormulaInfo;$('highQualityBtn').onclick=()=>is3d?draw3d(true):draw2d(true);$('randomJulia').onclick=()=>{juliaReal=+(Math.random()*1.2-.6).toFixed(3);juliaImag=+(Math.random()*1.2-.6).toFixed(3);$('juliaReal').value=juliaReal;$('juliaImag').value=juliaImag;$('juliaRealValue').value=juliaReal.toFixed(2);$('juliaImagValue').value=juliaImag.toFixed(3);selectFormula('julia');};
- $('fullscreenBtn').onclick=()=>toggleArtOnly();$('qualityMenuBtn').textContent=captureQuality==='screen'?'STD':captureQuality.toUpperCase();$('qualityMenuBtn').onclick=openCaptureQualityMenu;$('captureQuality').value=captureQuality;$('captureQualityValue').value=getCaptureProfile().label;$('captureQuality').onchange=e=>{captureQuality=captureProfiles[e.target.value]?e.target.value:'hd';localStorage.setItem('fae-capture-quality',captureQuality);$('captureQualityValue').value=getCaptureProfile().label;$('qualityMenuBtn').textContent=captureQuality==='screen'?'STD':captureQuality.toUpperCase();captureRenderArmed=true;showToast('Qualità '+getCaptureProfile().label+' pronta · premi ⛶ per renderizzare');}; $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<div class="modal-kicker">QUICK GUIDE</div><h2>Esplora i frattali</h2><p><b>2D:</b> trascina per spostarti, rotella o pinch per zoom, doppio tocco per ingrandire. Modifica iterazioni, potenza e palette dal pannello parametri.</p><p><b>3D:</b> trascina per ruotare Mandelbulb, Menger o Mandelbox; usa rotella/pinch per avvicinarti. Il rendering usa WebGL2 e ray marching.</p><p><b>Deep zoom:</b> attivalo su Mandelbrot o Julia per usare coordinate e orbite BigInt fixed-point da 128 a 1024 bit. Il rendering riduce automaticamente la risoluzione di anteprima alle precisioni maggiori per contenere il carico sul telefono.</p><p><b>Tela immersiva:</b> entra nella modalità solo grafica per osservare l’opera senza scritte né comandi. In Telegram esci con la freccia Indietro; altrove usa Esc o tieni premuto un angolo per un istante.</p><p><b>Tastiera:</b> +/− zoom, R reset, spazio pannello controlli, frecce per spostarti.</p><p><b>Qualità screenshot:</b> tocca HD nella barra superiore e scegli Schermo, HD, QHD o Ultra: la scelta prepara un solo render ad alta qualità. Poi premi ⛶ per avviarlo con percentuale di completamento; senza una scelta, ⛶ entra subito nella tela senza ricalcoli. <b>Telegram:</b> usa il pulsante ⛶ per lo schermo intero. Il progetto funziona anche come sito statico GitHub Pages.</p>';openModal();};$('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal();};
+ $('fullscreenBtn').onclick=()=>toggleArtOnly();
+ $('qualityMenuBtn').onclick=showExportOptions;
+ $('exportDockButton').onclick=showExportOptions;
+ $('exportOptions').addEventListener('click',e=>{const btn=e.target.closest('[data-export-quality]');if(btn)downloadArt(btn.dataset.exportQuality);});
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<div class="modal-kicker">FRACTAL ART EXPLORER</div><h2>Esplora e salva</h2><p>Premi ⛶: il frattale si espande e il sistema calcola le parti della scena prima non visibili, conservando centro, zoom e colori.</p><p>In basso trovi ↓ IMMAGINE: scegli Normale, HD o Ultra per creare un PNG. I pulsanti scompaiono automaticamente per lasciare lo screenshot pulito: tocca la tela per farli riapparire.</p><p>Il download diretto può essere bloccato dalla WebView di Telegram: in quel caso tieni premuto l’anteprima del PNG, oppure condividila da Android.</p><p>Per uscire usa Indietro Telegram, Esc o una pressione prolungata nell’angolo superiore destro.</p>';openModal();};
+ $('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal();};
  $('openLibrary').onclick=()=>$('library').classList.add('open');$('closeLibrary').onclick=()=>$('library').classList.remove('open');$('collapseControls').onclick=()=>{$('controlPanel').classList.toggle('collapsed');};
- const pointerDown=e=>{if(e.pointerType==='mouse'&&e.button!==0)return;armInvisibleExit(e);stage.setPointerCapture?.(e.pointerId);drag={x:e.clientX,y:e.clientY,cx:centerX,cy:centerY,dcx:deepCx,dcy:deepCy,rx:renderer3d?.rotX,ry:renderer3d?.rotY,moved:false};};
- const pointerMove=e=>{if(!drag||pinch)return;let dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>2){drag.moved=true;disarmInvisibleExit();}if(is3d){renderer3d.rotY=drag.ry+dx*.008;renderer3d.rotX=Math.max(-1.5,Math.min(1.5,drag.rx+dy*.008));}else{let r=stage.getBoundingClientRect(),s=Math.min(r.width,r.height);if(deepEnabled){const rx=deepRatioQ(dx,s),ry=deepRatioQ(dy,s);deepCx=drag.dcx-fixedMul(deepScale,rx);deepCy=drag.dcy-fixedMul(deepScale,ry);updateDeepApprox();}else{centerX=drag.cx-dx/s*scale;centerY=drag.cy-dy/s*scale;}}scheduleDraw();updateHUD();};const pointerUp=()=>{disarmInvisibleExit();drag=null;};
+ const pointerDown=e=>{if(e.target.closest('button,a,input,select,.export-dock'))return;if(e.pointerType==='mouse'&&e.button!==0)return;armInvisibleExit(e);stage.setPointerCapture?.(e.pointerId);drag={x:e.clientX,y:e.clientY,cx:centerX,cy:centerY,dcx:deepCx,dcy:deepCy,rx:renderer3d?.rotX,ry:renderer3d?.rotY,moved:false};};
+ const pointerMove=e=>{if(!drag||pinch)return;let dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>2){drag.moved=true;disarmInvisibleExit();}if(is3d){renderer3d.rotY=drag.ry+dx*.008;renderer3d.rotX=Math.max(-1.5,Math.min(1.5,drag.rx+dy*.008));}else{let r=stage.getBoundingClientRect(),s=Math.min(r.width,r.height);if(deepEnabled){const rx=deepRatioQ(dx,s),ry=deepRatioQ(dy,s);deepCx=drag.dcx-fixedMul(deepScale,rx);deepCy=drag.dcy-fixedMul(deepScale,ry);updateDeepApprox();}else{centerX=drag.cx-dx/s*scale;centerY=drag.cy-dy/s*scale;}}scheduleDraw();updateHUD();};const pointerUp=()=>{if(artOnly&&drag&&!drag.moved)showExportDock(4000);disarmInvisibleExit();drag=null;};
  stage.addEventListener('pointerdown',pointerDown);stage.addEventListener('pointermove',pointerMove);stage.addEventListener('pointerup',pointerUp);stage.addEventListener('pointercancel',pointerUp);stage.addEventListener('wheel',e=>{e.preventDefault();zoom(e.deltaY<0?.8:1.25,e.clientX,e.clientY);},{passive:false});stage.addEventListener('dblclick',e=>zoom(.5,e.clientX,e.clientY));
  stage.addEventListener('touchstart',e=>{if(e.touches.length===2){pinch={distance:Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY)};}},{passive:true});stage.addEventListener('touchmove',e=>{if(e.touches.length===2&&pinch){let d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY),f=pinch.distance/d;pinch.distance=d;zoom(f,(e.touches[0].clientX+e.touches[1].clientX)/2,(e.touches[0].clientY+e.touches[1].clientY)/2);}},{passive:true});stage.addEventListener('touchend',()=>pinch=null);
  window.addEventListener('keydown',e=>{if(e.target.matches('input,select'))return;if(e.key==='+'||e.key==='=')zoom(.7);if(e.key==='-')zoom(1.4);if(e.key.toLowerCase()==='r')resetView();if(e.key==='Escape'){if(artOnly){toggleArtOnly(false);return;}$('library').classList.remove('open');closeModal();}if(e.key===' '){e.preventDefault();$('controlPanel').classList.toggle('collapsed');}if(e.key.startsWith('Arrow')){if(deepEnabled){let d=deepScale/12n;if(e.key==='ArrowLeft')deepCx-=d;if(e.key==='ArrowRight')deepCx+=d;if(e.key==='ArrowUp')deepCy-=d;if(e.key==='ArrowDown')deepCy+=d;updateDeepApprox();}else{let d=scale*.08;if(e.key==='ArrowLeft')centerX-=d;if(e.key==='ArrowRight')centerX+=d;if(e.key==='ArrowUp')centerY-=d;if(e.key==='ArrowDown')centerY+=d;}scheduleDraw();updateHUD();}});
- window.addEventListener('resize',()=>{if(artOnly)return;if(is3d)resize3d(false);else scheduleDraw(false);});
+ window.addEventListener('resize',()=>{if(artOnly){triggerFullscreenResize();return;}if(normalExitViewport){const now=screenGeometry();if(Math.abs(now.width-normalExitViewport.width)>.5||Math.abs(now.height-normalExitViewport.height)>.5){scaleForViewport(normalExitViewport,now);normalExitViewport=now;}setTimeout(()=>{normalExitViewport=null;},450);}if(is3d)resize3d(false);else scheduleDraw(false);});
+ window.visualViewport?.addEventListener('resize',()=>{if(artOnly)triggerFullscreenResize();});
 }
 
 let activeArtId='violet-reverie',artFilter='all';

@@ -126,3 +126,24 @@ body.art-only .render-progress-track i{box-shadow:0 0 10px #d3a4ff}
 .capture-choice.selected{border-color:#bb96e8;background:linear-gradient(100deg,#9b72d333,#ffffff08);box-shadow:0 0 0 1px #c29be522}
 .capture-choice span{display:grid;gap:4px}.capture-choice b{font:700 11px var(--sans);letter-spacing:.1em}.capture-choice small{font:10px var(--sans);color:#ad9dbd}.capture-choice em{font:8px var(--mono);color:#c6a4ef;font-style:normal;white-space:nowrap}
 @media(max-width:430px){.quality-menu-btn{min-width:35px;padding:0 7px;font-size:8px}.top-actions{gap:5px}}
+
+/* v4.5 — preserve the current crop when viewport grows; never cover/crop the render. */
+body.art-only .visual-stage canvas{object-fit:fill!important}
+body.art-only .visual-stage canvas[hidden]{display:none!important}
+body.art-only #canvas2d.hidden,body.art-only #canvas3d.hidden{display:none!important}
+#exportDock[hidden],#exportOptions[hidden]{display:none!important}
+.export-dock{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);transform:translateX(-50%);z-index:22;display:flex;flex-direction:column;align-items:center;gap:9px;transition:opacity .3s ease;max-width:calc(100vw - 32px)}
+.export-dock.dock-idle{opacity:0;pointer-events:none}
+.export-dock-button{padding:11px 18px;border:1px solid #d4bfff55;border-radius:99px;background:#090815bb;backdrop-filter:blur(13px);color:#f1dfff;box-shadow:0 8px 25px #0007;font:700 11px var(--sans);letter-spacing:.09em;white-space:nowrap}
+.export-options{display:flex;flex-wrap:nowrap;gap:6px;padding:8px;border:1px solid #bba3dc44;border-radius:13px;background:#080710e8;backdrop-filter:blur(14px);box-shadow:0 10px 40px #0008}
+.export-options button{min-width:80px;padding:8px 9px;display:flex;flex-direction:column;gap:4px;border:1px solid #a98fd433;border-radius:9px;background:#231c39;color:#fff4ff}
+.export-options b{font-size:11px}.export-options small{font-size:9px;color:#c4b3d8}
+body:not(.art-only) #exportDock:not([hidden]){bottom:15px}
+body.art-only #exportDock{display:flex!important}
+body.art-only .render-overlay.show{z-index:25!important}
+body.art-only .render-overlay.show ~ .export-dock{opacity:0}
+.image-save-fallback{position:fixed;z-index:100000;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);transform:translateX(-50%);width:min(430px,calc(100vw - 24px));max-height:80dvh;overflow:auto;background:#131020ed;color:#f4eaff;border:1px solid #baa3ec75;border-radius:16px;padding:12px;box-shadow:0 12px 50px #000b;backdrop-filter:blur(14px)}
+.image-save-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.image-save-head b{font-size:13px}.image-save-head button{font-size:23px;border:none;background:transparent}
+.image-save-fallback p{font-size:11px;line-height:1.5;color:#cfbeda}.image-save-fallback img{width:100%;max-height:48dvh;object-fit:contain;background:#000;display:block;border-radius:8px;-webkit-touch-callout:default;user-select:auto}
+.image-save-fallback .fallback-download{display:block;text-align:center;color:#fff;text-decoration:none;background:#58408d;padding:9px;border-radius:9px;margin-top:9px;font-size:12px;font-weight:700}
+@media(max-width:760px){.bottom-actions{display:flex!important}.bottom-toolbar .mini-btn{font-size:10px;padding:6px 10px}.export-dock-button{padding:10px 13px}.export-options button{min-width:72px}}

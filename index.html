@@ -19,7 +19,7 @@
   <header class="topbar">
     <button class="icon-btn mobile-only" id="openLibrary" aria-label="Apri catalogo">☰</button>
     <div class="brand"><div class="brand-mark">ƒ</div><div><div class="brand-name">FRACTAL <span>ATELIER</span></div><div class="brand-sub">ART BEYOND INFINITY</div></div></div>
-    <div class="top-actions"><span class="engine-status" id="engineStatus"><i></i> READY</span><button class="icon-btn" id="helpBtn" title="Ispirazione">✧</button><button class="icon-btn quality-menu-btn" id="qualityMenuBtn" title="Qualità screenshot" aria-label="Qualità screenshot">HD</button><button class="icon-btn immersive-btn" id="fullscreenBtn" title="Tela immersiva senza interfaccia" aria-label="Tela immersiva senza interfaccia">⛶</button></div>
+    <div class="top-actions"><span class="engine-status" id="engineStatus"><i></i> READY</span><button class="icon-btn" id="helpBtn" title="Ispirazione">✧</button><button class="icon-btn immersive-btn" id="fullscreenBtn" title="Tela immersiva senza interfaccia" aria-label="Tela immersiva senza interfaccia">⛶</button></div>
   </header>
   <div class="workspace" id="workspace">
     <aside class="library" id="library">
@@ -38,7 +38,15 @@
       </div>
       <section class="visual-stage" id="visualStage">
         <canvas id="canvas2d"></canvas><canvas id="previewCanvas" class="preview-layer" hidden aria-hidden="true"></canvas><canvas id="canvas3d" class="hidden"></canvas>
-        <div class="render-overlay" id="renderOverlay" aria-live="polite" aria-atomic="true">
+        <div id="exportDock" class="export-dock" aria-label="Download immagine" hidden>
+  <div id="exportOptions" class="export-options" hidden>
+    <button type="button" data-export-quality="screen"><b>Normale</b><small>1× · rapido</small></button>
+    <button type="button" data-export-quality="hd"><b>HD</b><small>2× · dettagliato</small></button>
+    <button type="button" data-export-quality="ultra"><b>Ultra</b><small>3× · massima qualità</small></button>
+  </div>
+  <button type="button" id="exportDockButton" class="export-dock-button" aria-label="Qualità e download PNG" aria-expanded="false">↓ <span>IMMAGINE</span></button>
+</div>
+<div class="render-overlay" id="renderOverlay" aria-live="polite" aria-atomic="true">
           <div class="render-progress-card">
             <div class="render-progress-head"><span id="renderMessage">PREPARAZIONE DELLA TELA</span><strong id="renderPercent">0%</strong></div>
             <div class="render-progress-track"><i id="renderProgressBar"></i></div>
@@ -53,7 +61,7 @@
       </section>
       <div class="bottom-toolbar"><div class="palette-strip" id="paletteStrip" aria-label="Palette colori">
 <button class="palette-chip active" data-palette="cosmic"><i class="swatch cosmic"></i><span>Cosmica</span></button><button class="palette-chip" data-palette="aurora"><i class="swatch aurora"></i><span>Aurora</span></button><button class="palette-chip" data-palette="fire"><i class="swatch fire"></i><span>Fiamma</span></button><button class="palette-chip" data-palette="ocean"><i class="swatch ocean"></i><span>Oceano</span></button><button class="palette-chip" data-palette="candy"><i class="swatch candy"></i><span>Pastello</span></button><button class="palette-chip" data-palette="gold"><i class="swatch gold"></i><span>Oro</span></button><button class="palette-chip" data-palette="neon"><i class="swatch neon"></i><span>Neon</span></button><button class="palette-chip" data-palette="mono"><i class="swatch mono"></i><span>Inchiostro</span></button>
-</div><div class="bottom-actions"><button class="mini-btn" id="favoriteBtn" title="Aggiungi ai preferiti">♡</button><button class="mini-btn" id="formulaInfoBtn" title="Dettagli opera">✧</button></div></div>
+</div><div class="bottom-actions"><button class="mini-btn" id="qualityMenuBtn" title="Scarica immagine PNG" aria-label="Scarica immagine PNG">↓ PNG</button><button class="mini-btn" id="favoriteBtn" title="Aggiungi ai preferiti">♡</button><button class="mini-btn" id="formulaInfoBtn" title="Dettagli opera">✧</button></div></div>
 <section class="art-gallery" id="artGallery"><div class="gallery-heading"><div><div class="eyebrow">LA COLLEZIONE</div><h2>Lasciati sorprendere</h2></div><span class="gallery-count" id="artCount">67 opere</span></div><div class="art-filters" id="artFilters"><button class="art-filter active" data-art-filter="all">Tutte</button><button class="art-filter" data-art-filter="cosmos">Cosmo</button><button class="art-filter" data-art-filter="floral">Fiori</button><button class="art-filter" data-art-filter="geometry">Geometrie</button><button class="art-filter" data-art-filter="nature">Natura</button><button class="art-filter" data-art-filter="chaos">Caos</button><button class="art-filter" data-art-filter="random">Organiche</button><button class="art-filter" data-art-filter="three">3D</button></div><div class="art-cards" id="artCards"></div></section>
     </main>
     <aside class="control-panel" id="controlPanel">
@@ -64,23 +72,13 @@
         <div class="control-block" id="juliaBlock"><div class="control-label"><label for="juliaC">Costante Julia — Re</label><output id="juliaRealValue">−0.80</output></div><input id="juliaReal" type="range" min="-1.5" max="1.5" value="-0.8" step="0.01"><div class="control-label sub-control"><label for="juliaImag">Costante Julia — Im</label><output id="juliaImagValue">0.156</output></div><input id="juliaImag" type="range" min="-1.5" max="1.5" value="0.156" step="0.001"></div>
         <div class="control-block" id="paletteBlock"><div class="control-label"><label for="palette">Palette cromatica</label></div><div class="palette-row"><select id="palette"><option value="cosmic">Cosmic</option><option value="fire">Solar flare</option><option value="ocean">Deep ocean</option><option value="aurora">Aurora</option><option value="mono">Monochrome</option><option value="candy">Candy</option><option value="gold">Gold</option><option value="neon">Neon</option></select><button class="palette-swatch" id="paletteCycle" title="Cambia palette">✧</button></div></div>
         <div class="control-block" id="renderQualityBlock"><div class="control-label"><label for="quality">Qualità anteprima</label><output id="qualityValue">70%</output></div><input id="quality" type="range" min="35" max="100" value="70" step="5"></div>
-        <div class="control-block capture-quality-block" id="captureQualityBlock">
-          <div class="control-label"><label for="captureQuality">Qualità per screenshot</label><output id="captureQualityValue">HD</output></div>
-          <select id="captureQuality">
-            <option value="screen">Schermo · standard</option>
-            <option value="hd" selected>Alta definizione · HD</option>
-            <option value="qhd">Molto alta · QHD</option>
-            <option value="ultra">Massima · Ultra</option>
-          </select>
-          <small>Render più ricco e sovracampionato. Lo screenshot del telefono resta alla risoluzione fisica del display.</small>
-        </div>
         <div class="control-block deep-precision" id="deepPrecisionBlock" hidden><div class="control-label"><label for="deepPrecision">Precisione multipla</label><output>BigInt</output></div><select id="deepPrecision"><option value="128">128 bit · veloce</option><option value="256">256 bit</option><option value="512" selected>512 bit · consigliato</option><option value="1024">1024 bit · estremo</option></select><small>Solo Mandelbrot e Julia. Render CPU più impegnativo.</small></div>
         <div class="control-block" id="threeControls" hidden><div class="control-label"><label for="threePower">Potenza 3D</label><output id="threePowerValue">8</output></div><input id="threePower" type="range" min="3" max="12" value="8" step="1"><div class="control-label sub-control"><label for="threeDetail">Dettaglio 3D</label><output id="threeDetailValue">8</output></div><input id="threeDetail" type="range" min="4" max="14" value="8" step="1"></div>
         <div class="control-block preset-block"><div class="control-label"><label for="preset">Preset</label></div><select id="preset"><option value="">Scegli una composizione…</option></select></div>
         <div class="control-actions"><button class="action-btn secondary" id="randomJulia">Julia casuale</button><button class="action-btn secondary" id="highQualityBtn">Applica qualità</button></div>
         <div class="stats-card"><div><span>POSIZIONE</span><b id="positionStat">−0.500 / 0.000</b></div><div><span>FATTORE ZOOM</span><b id="zoomStat">1.00×</b></div><div><span>RENDER</span><b id="renderStat">Canvas CPU</b></div></div>
       </div>
-      <div class="panel-bottom"><span>FRACTINT MINI</span><span>v4.4.0</span></div>
+      <div class="panel-bottom"><span>FRACTINT MINI</span><span>v4.5.0</span></div>
     </aside>
   </div>
 </div>

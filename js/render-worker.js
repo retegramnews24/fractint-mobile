@@ -27,6 +27,7 @@ function iterate(kind,x,y,cfg){let zx=0,zy=0,cx=x,cy=y,prevx=0,prevy=0,iter=0,ro
   else if(kind==='mcmullen'){let r=zx*zx+zy*zy;if(r<1e-12)break;nx=zx*zx-zy*zy+cx+.25*(zx*zx-zy*zy)/(r*r);ny=2*zx*zy+cy-.5*zx*zy/(r*r);}
   else if(kind==='lambda'){nx=2.2*zx*(1-zx)+cx;ny=2.2*zy*(1-2*zx)+cy;}
   else if(kind==='nova'){let [p3r,p3i]=complexPower(zx,zy,3),[p2r,p2i]=complexPower(zx,zy,2);let den=9*(p2r*p2r+p2i*p2i);if(den<1e-14)break;let qr=((p3r-1)*3*p2r+p3i*3*p2i)/den,qi=(p3i*3*p2r-(p3r-1)*3*p2i)/den;nx=zx-qr+cx;ny=zy-qi+cy;}
+  else if(p===2){nx=zx*zx-zy*zy+cx;ny=2*zx*zy+cy;}
   else {let [pr,pi]=complexPower(zx,zy,p);nx=pr+cx;ny=pi+cy;}
   zx=nx;zy=ny;let r2=zx*zx+zy*zy;
   if(kind==='biomorph'){if(Math.abs(zx)>4||Math.abs(zy)>4)break;}else if(r2>256)break;
