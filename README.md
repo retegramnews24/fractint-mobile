@@ -49,3 +49,12 @@ PNG downloads in Android Telegram WebView may be handled differently depending o
 - The 3D GPU path is **not verified on Telegram Android** in this environment: it requires device testing.
 
 Licensed under the terms of `LICENSE`.
+
+## v4.6 — gesti e PNG semplificato
+
+- **Un dito**: trascina la mappa. **Due dita**: pinch, traslazione e rotazione simultanei sulle mappe 2D, inclusi Sierpiński, frattali geometrici e BigInt; nei 3D la torsione ruota la visuale, il pinch regola lo zoom.
+- Lo zoom ruotato preserva l'elemento sotto il punto di contatto. La rotazione viene incorporata nei rendering CPU, nei preview temporanei e nel PNG di esportazione.
+- Fullscreen conserva centro, zoom, orientamento e colori; amplia la porzione visibile senza stirare l'immagine.
+- **Salvataggio**: seleziona Normale / HD / Ultra nel controllo in basso, premi **Salva PNG**. Dopo il calcolo compare **una sola finestra**: **Condividi / Salva** (se la condivisione file Web Share è supportata), **Scarica PNG** e l'immagine su cui è possibile effettuare pressione prolungata.
+- Le Mini App Telegram non possono salvare direttamente in una cartella arbitraria di Telegram o bypassare le restrizioni WebView: selezionare la destinazione dipende dal sistema Android. Per archiviare in Telegram, scegli **Messaggi salvati** dalla schermata di condivisione quando disponibile.
+- Quando è necessario generare un PNG di grandi dimensioni prima della condivisione nativa, l'utente deve premere **Condividi / Salva** dopo la preparazione del file per rispettare l'attivazione utente richiesta dalla Web Share API.

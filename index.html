@@ -38,15 +38,14 @@
       </div>
       <section class="visual-stage" id="visualStage">
         <canvas id="canvas2d"></canvas><canvas id="previewCanvas" class="preview-layer" hidden aria-hidden="true"></canvas><canvas id="canvas3d" class="hidden"></canvas>
-        <div id="exportDock" class="export-dock" aria-label="Download immagine" hidden>
-  <div id="exportOptions" class="export-options" hidden>
-    <button type="button" data-export-quality="screen"><b>Normale</b><small>1× · rapido</small></button>
-    <button type="button" data-export-quality="hd"><b>HD</b><small>2× · dettagliato</small></button>
-    <button type="button" data-export-quality="ultra"><b>Ultra</b><small>3× · massima qualità</small></button>
-  </div>
-  <button type="button" id="exportDockButton" class="export-dock-button" aria-label="Qualità e download PNG" aria-expanded="false">↓ <span>IMMAGINE</span></button>
-</div>
-<div class="render-overlay" id="renderOverlay" aria-live="polite" aria-atomic="true">
+        <div id="exportDock" class="export-dock" aria-label="Salva il frattale" hidden>
+          <label for="saveQuality" class="save-quality-label">QUALITÀ</label>
+          <select id="saveQuality" class="save-quality" aria-label="Qualità dell’immagine PNG">
+            <option value="screen">Normale</option><option value="hd" selected>HD</option><option value="ultra">Ultra</option>
+          </select>
+          <button type="button" id="exportDockButton" class="export-dock-button" aria-label="Salva il frattale in PNG">↓ SALVA PNG</button>
+        </div>
+        <div class="render-overlay" id="renderOverlay" aria-live="polite" aria-atomic="true">
           <div class="render-progress-card">
             <div class="render-progress-head"><span id="renderMessage">PREPARAZIONE DELLA TELA</span><strong id="renderPercent">0%</strong></div>
             <div class="render-progress-track"><i id="renderProgressBar"></i></div>
@@ -56,12 +55,12 @@
         <div class="stage-hud top-left"><span class="live-dot"></span><span id="modeLabel">2D FRACTAL</span></div>
         <div class="stage-hud bottom-left"><span id="zoomLabel">ZOOM 1.00×</span><span class="hud-sep">/</span><span id="precisionLabel">CPU RENDER</span></div>
         <div class="stage-hud bottom-right" id="coordLabel">x: −0.5000 · y: 0.0000</div>
-        <div class="stage-hint" id="stageHint">TRASCINA PER SPOSTARTI · ROTELLA / PINCH PER ZOOM</div>
+        <div class="stage-hint" id="stageHint">TRASCINA PER SPOSTARE · DUE DITA PER ZOOM E ROTAZIONE</div>
         <button class="stage-zoom zoom-plus" id="zoomIn" aria-label="Zoom avanti">+</button><button class="stage-zoom zoom-minus" id="zoomOut" aria-label="Zoom indietro">−</button>
       </section>
       <div class="bottom-toolbar"><div class="palette-strip" id="paletteStrip" aria-label="Palette colori">
 <button class="palette-chip active" data-palette="cosmic"><i class="swatch cosmic"></i><span>Cosmica</span></button><button class="palette-chip" data-palette="aurora"><i class="swatch aurora"></i><span>Aurora</span></button><button class="palette-chip" data-palette="fire"><i class="swatch fire"></i><span>Fiamma</span></button><button class="palette-chip" data-palette="ocean"><i class="swatch ocean"></i><span>Oceano</span></button><button class="palette-chip" data-palette="candy"><i class="swatch candy"></i><span>Pastello</span></button><button class="palette-chip" data-palette="gold"><i class="swatch gold"></i><span>Oro</span></button><button class="palette-chip" data-palette="neon"><i class="swatch neon"></i><span>Neon</span></button><button class="palette-chip" data-palette="mono"><i class="swatch mono"></i><span>Inchiostro</span></button>
-</div><div class="bottom-actions"><button class="mini-btn" id="qualityMenuBtn" title="Scarica immagine PNG" aria-label="Scarica immagine PNG">↓ PNG</button><button class="mini-btn" id="favoriteBtn" title="Aggiungi ai preferiti">♡</button><button class="mini-btn" id="formulaInfoBtn" title="Dettagli opera">✧</button></div></div>
+</div><div class="bottom-actions"><button class="mini-btn" id="qualityMenuBtn" title="Salva il frattale in PNG" aria-label="Salva il frattale in PNG">↓ PNG</button><button class="mini-btn" id="favoriteBtn" title="Aggiungi ai preferiti">♡</button><button class="mini-btn" id="formulaInfoBtn" title="Dettagli opera">✧</button></div></div>
 <section class="art-gallery" id="artGallery"><div class="gallery-heading"><div><div class="eyebrow">LA COLLEZIONE</div><h2>Lasciati sorprendere</h2></div><span class="gallery-count" id="artCount">67 opere</span></div><div class="art-filters" id="artFilters"><button class="art-filter active" data-art-filter="all">Tutte</button><button class="art-filter" data-art-filter="cosmos">Cosmo</button><button class="art-filter" data-art-filter="floral">Fiori</button><button class="art-filter" data-art-filter="geometry">Geometrie</button><button class="art-filter" data-art-filter="nature">Natura</button><button class="art-filter" data-art-filter="chaos">Caos</button><button class="art-filter" data-art-filter="random">Organiche</button><button class="art-filter" data-art-filter="three">3D</button></div><div class="art-cards" id="artCards"></div></section>
     </main>
     <aside class="control-panel" id="controlPanel">

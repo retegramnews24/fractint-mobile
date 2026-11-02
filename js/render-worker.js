@@ -35,10 +35,21 @@ function iterate(kind,x,y,cfg){let zx=0,zy=0,cx=x,cy=y,prevx=0,prevy=0,iter=0,ro
  let rr=zx*zx+zy*zy;return {i:smooth(iter,rr),r:rr,root,converged:iter>=max-1};
 }
 function seededRandom(seed){let a=seed>>>0;return()=>{a+=0x6D2B79F5;let t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;};}
+// Map every image pixel through a rotated, scale-aware viewport.
+function pixelWorld(px,py,cfg,w,h){
+ const dx=(px-w/2)/Math.min(w,h)*cfg.scale,dy=(py-h/2)/Math.min(w,h)*cfg.scale;
+ const co=cfg._cos??Math.cos(cfg.rotation||0),si=cfg._sin??Math.sin(cfg.rotation||0);
+ return [cfg.cx+co*dx-si*dy,cfg.cy+si*dx+co*dy];
+}
+function worldPixel(x,y,cfg,w,h){
+ const dx=(x-cfg.cx)/cfg.scale*Math.min(w,h),dy=(y-cfg.cy)/cfg.scale*Math.min(w,h);
+ const co=cfg._cos??Math.cos(cfg.rotation||0),si=cfg._sin??Math.sin(cfg.rotation||0);
+ return [Math.round(w/2+co*dx+si*dy),Math.round(h/2-si*dx+co*dy)];
+}
 function pointRender(cfg,w,h){
  const data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic,rand=seededRandom((cfg.type.length*2654435761+cfg.iterations*97)>>>0);
  for(let i=0;i<data.length;i+=4){data[i]=4;data[i+1]=7;data[i+2]=16;data[i+3]=255;}
- const put=(x,y,t)=>{let px=Math.round((x-cfg.cx)/cfg.scale*Math.min(w,h)+w/2),py=Math.round((y-cfg.cy)/cfg.scale*Math.min(w,h)+h/2);if(px<0||px>=w||py<0||py>=h)return;let k=(py*w+px)*4,col=pal(Math.max(0,Math.min(1,t)));data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];};
+ const put=(x,y,t)=>{let [px,py]=worldPixel(x,y,cfg,w,h);if(px<0||px>=w||py<0||py>=h)return;let k=(py*w+px)*4,col=pal(Math.max(0,Math.min(1,t)));data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];};
  const type=cfg.type,limit=Math.max(80000,Math.min(1500000,w*h*3.2));
  if(type==='fern'){
   let x=0,y=0;for(let i=0;i<limit;i++){let r=rand(),nx,ny;if(r<.01){nx=0;ny=.16*y;}else if(r<.86){nx=.85*x+.04*y;ny=-.04*x+.85*y+1.6;}else if(r<.93){nx=.2*x-.26*y;ny=.23*x+.22*y+1.6;}else{nx=-.15*x+.28*y;ny=.26*x+.24*y+.44;}x=nx;y=ny;if(i>30)put(x,y,(i%2400)/2400);}return data;
@@ -83,7 +94,7 @@ function pointRender(cfg,w,h){
  return data;
 }
 function valueNoise(x,y){let ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;fx=fx*fx*(3-2*fx);fy=fy*fy*(3-2*fy);const h=(a,b)=>{let n=Math.imul(a,374761393)+Math.imul(b,668265263);n=Math.imul(n^(n>>>13),1274126177);return((n^(n>>>16))>>>0)/4294967295;};let a=h(ix,iy),b=h(ix+1,iy),c=h(ix,iy+1),d=h(ix+1,iy+1);return(a+(b-a)*fx)*(1-fy)+(c+(d-c)*fx)*fy;}
-function landscapeRender(cfg,w,h){let data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic,min=Math.min(w,h);for(let y=0;y<h;y++)for(let x=0;x<w;x++){let wx=(x-w/2)/min*cfg.scale+cfg.cx,wy=(y-h/2)/min*cfg.scale+cfg.cy,v=0,amp=.56,freq=2,norm=0;for(let o=0;o<6;o++){v+=valueNoise((wx+.4)*freq,(wy-.2)*freq)*amp;norm+=amp;amp*=.52;freq*=2.03;}v/=norm;let ridge=1-Math.abs(v*2-1),t=Math.max(0,Math.min(1,(ridge-.24)*1.5));let col=pal(t),k=(y*w+x)*4;data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;}return data;}
+function landscapeRender(cfg,w,h){let data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic,min=Math.min(w,h);for(let y=0;y<h;y++)for(let x=0;x<w;x++){let [wx,wy]=pixelWorld(x,y,cfg,w,h),v=0,amp=.56,freq=2,norm=0;for(let o=0;o<6;o++){v+=valueNoise((wx+.4)*freq,(wy-.2)*freq)*amp;norm+=amp;amp*=.52;freq*=2.03;}v/=norm;let ridge=1-Math.abs(v*2-1),t=Math.max(0,Math.min(1,(ridge-.24)*1.5));let col=pal(t),k=(y*w+x)*4;data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;}return data;}
 function grayScottRender(cfg,w,h){
  const N=192,total=N*N,u=new Float32Array(total),v=new Float32Array(total),un=new Float32Array(total),vn=new Float32Array(total),rand=seededRandom(918273+(cfg.palette*997));u.fill(1);
  for(let y=0;y<N;y++)for(let x=0;x<N;x++){const k=y*N+x,dx=x-N/2,dy=y-N/2;if((Math.abs(dx)<12&&Math.abs(dy)<12)||(dx*dx+dy*dy<90&&rand()<.48)){u[k]=.5+rand()*.03;v[k]=.25+rand()*.03;}}
@@ -96,24 +107,33 @@ function grayScottRender(cfg,w,h){
   }u.set(un);v.set(vn);
  }
  const data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic;
- const min=Math.min(w,h),bs=cfg.baseScale||2.5,bx=cfg.baseCx||0,by=cfg.baseCy||0;for(let y=0;y<h;y++)for(let x=0;x<w;x++){const wx=(x-w/2)/min*cfg.scale+cfg.cx,wy=(y-h/2)/min*cfg.scale+cfg.cy,u=(wx-(bx-bs/2))/bs,vv=(wy-(by-bs/2))/bs,xx=Math.max(0,Math.min(N-1,Math.floor(u*N))),yy=Math.max(0,Math.min(N-1,Math.floor(vv*N))),val=(u<0||u>1||vv<0||vv>1)?0:v[yy*N+xx],t=Math.max(0,Math.min(1,(val-.035)*8)),col=pal(t),k=(y*w+x)*4;data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;}return data;
+ const min=Math.min(w,h),bs=cfg.baseScale||2.5,bx=cfg.baseCx||0,by=cfg.baseCy||0;for(let y=0;y<h;y++)for(let x=0;x<w;x++){const [wx,wy]=pixelWorld(x,y,cfg,w,h),u=(wx-(bx-bs/2))/bs,vv=(wy-(by-bs/2))/bs,xx=Math.max(0,Math.min(N-1,Math.floor(u*N))),yy=Math.max(0,Math.min(N-1,Math.floor(vv*N))),val=(u<0||u>1||vv<0||vv>1)?0:v[yy*N+xx],t=Math.max(0,Math.min(1,(val-.035)*8)),col=pal(t),k=(y*w+x)*4;data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;}return data;
 }
 function lifeRender(cfg,w,h){
  const cols=220,rows=180,n=cols*rows,rand=seededRandom(4321987+(cfg.palette*31)),a=new Uint8Array(n),b=new Uint8Array(n);for(let i=0;i<n;i++)a[i]=rand()<.32?1:0;
  for(let step=0;step<95;step++){for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){let count=0;for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){if(!ox&&!oy)continue;count+=a[((y+oy+rows)%rows)*cols+(x+ox+cols)%cols];}const k=y*cols+x;b[k]=count===3||(a[k]&&count===2)?1:0;}a.set(b);}
- const data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic,min=Math.min(w,h),bs=cfg.baseScale||2.5,bx=cfg.baseCx||0,by=cfg.baseCy||0;for(let y=0;y<h;y++)for(let x=0;x<w;x++){let wx=(x-w/2)/min*cfg.scale+cfg.cx,wy=(y-h/2)/min*cfg.scale+cfg.cy,u=(wx-(bx-bs/2))/bs,vv=(wy-(by-bs/2))/bs,inside=u>=0&&u<=1&&vv>=0&&vv<=1,ix=Math.max(0,Math.min(cols-1,Math.floor(u*cols))),iy=Math.max(0,Math.min(rows-1,Math.floor(vv*rows))),on=inside&&a[iy*cols+ix],col=on?pal((ix+iy)/(cols+rows)):[5,8,17],k=(y*w+x)*4;data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;}return data;
+ const data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic,min=Math.min(w,h),bs=cfg.baseScale||2.5,bx=cfg.baseCx||0,by=cfg.baseCy||0;for(let y=0;y<h;y++)for(let x=0;x<w;x++){let [wx,wy]=pixelWorld(x,y,cfg,w,h),u=(wx-(bx-bs/2))/bs,vv=(wy-(by-bs/2))/bs,inside=u>=0&&u<=1&&vv>=0&&vv<=1,ix=Math.max(0,Math.min(cols-1,Math.floor(u*cols))),iy=Math.max(0,Math.min(rows-1,Math.floor(vv*rows))),on=inside&&a[iy*cols+ix],col=on?pal((ix+iy)/(cols+rows)):[5,8,17],k=(y*w+x)*4;data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;}return data;
 }
 function bifurcationRender(cfg,w,h){
- const data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic;for(let i=0;i<data.length;i+=4){data[i]=3;data[i+1]=5;data[i+2]=13;data[i+3]=255;}
- const min=Math.min(w,h),bs=cfg.baseScale||1.55,bx=cfg.baseCx??3.25,by=cfg.baseCy??.5;
- for(let px=0;px<w;px++){const wx=(px-w/2)/min*cfg.scale+cfg.cx,r=wx;if(r<2.5||r>4)continue;let q=.5;for(let n=0;n<650;n++)q=r*q*(1-q);for(let n=0;n<150;n++){q=r*q*(1-q);const py=Math.round((q-cfg.cy)/cfg.scale*min+h/2);if(py>=0&&py<h){const k=(py*w+px)*4,col=pal(n/150);data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];}}}
+ const data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic;
+ for(let i=0;i<data.length;i+=4){data[i]=3;data[i+1]=5;data[i+2]=13;data[i+3]=255;}
+ const co=Math.abs(cfg._cos??Math.cos(cfg.rotation||0)),si=Math.abs(cfg._sin??Math.sin(cfg.rotation||0));
+ const halfWidth=(co*w+si*h)*cfg.scale/Math.min(w,h)/2;
+ const rmin=Math.max(2.5,cfg.cx-halfWidth),rmax=Math.min(4,cfg.cx+halfWidth);
+ const steps=Math.max(w,Math.min(3200,w*2));
+ for(let i=0;i<steps;i++){let r=rmin+(rmax-rmin)*(i+.5)/steps,q=.5;
+  for(let n=0;n<650;n++)q=r*q*(1-q);
+  for(let n=0;n<150;n++){q=r*q*(1-q);const [px,py]=worldPixel(r,q,cfg,w,h);
+   if(px>=0&&py>=0&&px<w&&py<h){const k=(py*w+px)*4,col=pal(n/150);data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];}
+  }
+ }
  return data;
 }
 function cellularRender(cfg,w,h,rule){const data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic,cols=Math.max(64,Math.floor(w/Math.max(.4,cfg.scale/2))),rows=Math.max(64,Math.floor(h/Math.max(.4,cfg.scale/2))),state=new Uint8Array(cols),next=new Uint8Array(cols),baseScale=cfg.baseScale||cfg.scale,bx=cfg.baseCx||0,by=cfg.baseCy||0;state[cols>>1]=1;const cells=new Uint8Array(cols*rows);for(let y=0;y<rows;y++){cells.set(state,y*cols);for(let x=0;x<cols;x++){let l=state[(x+cols-1)%cols],c=state[x],r=state[(x+1)%cols];const pattern=(l<<2)|(c<<1)|r;next[x]=(rule>>pattern)&1;}state.set(next);}
- for(let py=0;py<h;py++)for(let px=0;px<w;px++){let wx=(px-w/2)/Math.min(w,h)*cfg.scale+cfg.cx,wy=(py-h/2)/Math.min(w,h)*cfg.scale+cfg.cy,u=(wx-(bx-baseScale/2))/baseScale,v=(wy-(by-baseScale/2))/baseScale,ix=Math.floor(u*cols),iy=Math.floor(v*rows),on=ix>=0&&ix<cols&&iy>=0&&iy<rows&&cells[iy*cols+ix];let k=(py*w+px)*4,col=on?pal(iy/rows):[5,8,17];data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;}return data;}
+ for(let py=0;py<h;py++)for(let px=0;px<w;px++){let [wx,wy]=pixelWorld(px,py,cfg,w,h),u=(wx-(bx-baseScale/2))/baseScale,v=(wy-(by-baseScale/2))/baseScale,ix=Math.floor(u*cols),iy=Math.floor(v*rows),on=ix>=0&&ix<cols&&iy>=0&&iy<rows&&cells[iy*cols+ix];let k=(py*w+px)*4,col=on?pal(iy/rows):[5,8,17];data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;}return data;}
 function lyapunovValue(x,y,max){let q=.5,sum=0,seq='AB';for(let i=0;i<max;i++){let r=(i%2===0?x:y);q=r*q*(1-q);let d=Math.abs(r*(1-2*q));sum+=Math.log(Math.max(1e-8,d));if(q<1e-8||q>1-1e-8)return -2;}return sum/max;}
 
-async function renderSierpinski(cfg,w,h){const data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic,min=Math.min(w,h),baseScale=cfg.baseScale||1.2,baseCx=cfg.baseCx??.5,baseCy=cfg.baseCy??.5,depth=Math.max(5,Math.min(20,Math.round(cfg.iterations/12)||10));for(let y0=0;y0<h;y0+=12){if(cfg.job!==newestJob)return data;const yMax=Math.min(h,y0+12);for(let py=y0;py<yMax;py++){const wy=(py-h/2)/min*cfg.scale+cfg.cy,v=(wy-(baseCy-baseScale/2))/baseScale;for(let px=0;px<w;px++){const wx=(px-w/2)/min*cfg.scale+cfg.cx,u=(wx-(baseCx-baseScale/2))/baseScale,k=(py*w+px)*4;let t=0,inside=false;if(u>=.03&&u<=.97&&v>=.04&&v<=.94){let xx=(u-.03)/.94,yy=(v-.04)/.90;let a=1-yy,b=.5*yy+.5-xx,c=.5*yy+xx-.5;inside=true;let level=0;for(;level<depth;level++){if(Math.max(a,b,c)<.5){inside=false;break;}if(a>=b&&a>=c){a=2*a-1;b*=2;c*=2;}else if(b>=c){b=2*b-1;a*=2;c*=2;}else{c=2*c-1;a*=2;b*=2;}}t=inside?.55+.4*(level/depth):0;}const col=inside?pal(t):[4,7,16];data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;}}self.postMessage({job:cfg.job,progress:Math.round(yMax/h*100)});await new Promise(resolve=>setTimeout(resolve,0));}return data;}
+async function renderSierpinski(cfg,w,h){const data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic,min=Math.min(w,h),baseScale=cfg.baseScale||1.2,baseCx=cfg.baseCx??.5,baseCy=cfg.baseCy??.5,depth=Math.max(5,Math.min(20,Math.round(cfg.iterations/12)||10));for(let y0=0;y0<h;y0+=12){if(cfg.job!==newestJob)return data;const yMax=Math.min(h,y0+12);for(let py=y0;py<yMax;py++){for(let px=0;px<w;px++){const [wx,wy]=pixelWorld(px,py,cfg,w,h),u=(wx-(baseCx-baseScale/2))/baseScale,v=(wy-(baseCy-baseScale/2))/baseScale,k=(py*w+px)*4;let t=0,inside=false;if(u>=.03&&u<=.97&&v>=.04&&v<=.94){let xx=(u-.03)/.94,yy=(v-.04)/.90;let a=1-yy,b=.5*yy+.5-xx,c=.5*yy+xx-.5;inside=true;let level=0;for(;level<depth;level++){if(Math.max(a,b,c)<.5){inside=false;break;}if(a>=b&&a>=c){a=2*a-1;b*=2;c*=2;}else if(b>=c){b=2*b-1;a*=2;c*=2;}else{c=2*c-1;a*=2;b*=2;}}t=inside?.55+.4*(level/depth):0;}const col=inside?pal(t):[4,7,16];data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;}}self.postMessage({job:cfg.job,progress:Math.round(yMax/h*100)});await new Promise(resolve=>setTimeout(resolve,0));}return data;}
 
 function geometricPixel(type,u,v,depth){if(u<0||u>1||v<0||v>1)return false;if(type==='carpet'){for(let i=0;i<depth;i++){let x=u*3%1,y=v*3%1;if(x>1/3&&x<2/3&&y>1/3&&y<2/3)return false;u=u*3%1;v=v*3%1;}return true;}if(type==='vicsek'){for(let i=0;i<depth;i++){let x=u*3%1,y=v*3%1;let a=x<1/3?0:x<2/3?1:2,b=y<1/3?0:y<2/3?1:2;if(!((a===1&&b===1)||(a!==1&&b!==1)))return false;u=u*3%1;v=v*3%1;}return true;}if(type==='cantor'){if(v<.44||v>.56)return false;let x=u;for(let i=0;i<depth;i++){let t=x*3%1;if(t>1/3&&t<2/3)return false;x=x*3%1;}return true;}if(type==='cantor-dust'){for(let i=0;i<depth;i++){let x=u*3%1,y=v*3%1;if((x>1/3&&x<2/3)||(y>1/3&&y<2/3))return false;u=u*3%1;v=v*3%1;}return true;}return false;}
 
@@ -122,7 +142,7 @@ function drawVector(type,cfg,w,h){
  ctx.fillStyle='#050811';ctx.fillRect(0,0,w,h);
  const pal=palettes[cfg.palette]||palettes.cosmic,stroke=pal(.72).map(v=>Math.round(v));
  ctx.strokeStyle=`rgb(${stroke[0]},${stroke[1]},${stroke[2]})`;ctx.lineWidth=Math.max(1,w/900);ctx.lineCap='round';ctx.lineJoin='round';
- const cx=w/2,cy=h/2,unit=Math.min(w,h)*.42,baseScale=cfg.baseScale||cfg.scale,baseCx=cfg.baseCx||0,baseCy=cfg.baseCy||0,viewScale=baseScale/(cfg.scale||baseScale),tx=w/2*(1-viewScale)+(baseCx-cfg.cx)*Math.min(w,h)/(cfg.scale||baseScale),ty=h/2*(1-viewScale)+(baseCy-cfg.cy)*Math.min(w,h)/(cfg.scale||baseScale);ctx.setTransform(viewScale,0,0,viewScale,tx,ty);
+ const cx=w/2,cy=h/2,unit=Math.min(w,h)*.42,baseScale=cfg.baseScale||cfg.scale,baseCx=cfg.baseCx||0,baseCy=cfg.baseCy||0,viewScale=baseScale/(cfg.scale||baseScale),co=cfg._cos??Math.cos(cfg.rotation||0),si=cfg._sin??Math.sin(cfg.rotation||0),a=viewScale*co,b=-viewScale*si,c=viewScale*si,d=viewScale*co,ox=(baseCx-cfg.cx)*Math.min(w,h)/(cfg.scale||baseScale),oy=(baseCy-cfg.cy)*Math.min(w,h)/(cfg.scale||baseScale),tx=w/2+co*ox+si*oy-a*w/2-c*h/2,ty=h/2-si*ox+co*oy-b*w/2-d*h/2;ctx.setTransform(a,b,c,d,tx,ty);
  if(type==='koch'){
   function line(a,b,n){if(n===0){ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);return;}let dx=(b[0]-a[0])/3,dy=(b[1]-a[1])/3,p=[a[0]+dx,a[1]+dy],q=[a[0]+2*dx,a[1]+2*dy],ang=-Math.PI/3,peak=[p[0]+dx*Math.cos(ang)-dy*Math.sin(ang),p[1]+dx*Math.sin(ang)+dy*Math.cos(ang)];line(a,p,n-1);line(p,peak,n-1);line(peak,q,n-1);line(q,b,n-1);}
   let r=unit*.82,pts=[[cx,cy-r],[cx-r*.866,cy+r*.5],[cx+r*.866,cy+r*.5]];ctx.beginPath();for(let i=0;i<3;i++)line(pts[i],pts[(i+1)%3],Math.min(6,Math.round(cfg.iterations)));ctx.stroke();
@@ -182,12 +202,12 @@ async function renderDeep(cfg,w,h){
  const type=cfg.type;if(type!=='mandelbrot'&&type!=='julia')throw new Error('Deep zoom disponibile per Mandelbrot e Julia');
  const jr=Number(cfg.juliaReal),ji=Number(cfg.juliaImag),jcR=fixedFromNumber(Number.isFinite(jr)?jr:-.8,Q),jcI=fixedFromNumber(Number.isFinite(ji)?ji:.156,Q);
  const data=new Uint8ClampedArray(w*h*4),pal=palettes[cfg.palette]||palettes.cosmic,min=BigInt(Math.min(w,h)),den=2n*min,escape=256n*Q;
- const pxSpan=span;
+ const pxSpan=span,co=fixedFromNumber(Math.cos(cfg.rotation||0),Q),si=fixedFromNumber(Math.sin(cfg.rotation||0),Q);
  for(let y0=0;y0<h;y0+=3){if(cfg.job!==newestJob)return data;const ymax=Math.min(h,y0+3);
   for(let py=y0;py<ymax;py++){
-   const oy=BigInt(2*py+1-h)*pxSpan/den,baseY=cy0+oy;
+   const oy=BigInt(2*py+1-h)*pxSpan/den;
    for(let px=0;px<w;px++){
-    const ox=BigInt(2*px+1-w)*pxSpan/den,cx=cx0+ox,cy=baseY;
+    const ox=BigInt(2*px+1-w)*pxSpan/den,cx=cx0+((ox*co-oy*si)>>shift),cy=cy0+((ox*si+oy*co)>>shift);
     let zx=type==='julia'?cx:0n,zy=type==='julia'?cy:0n,cr=type==='julia'?jcR:cx,ci=type==='julia'?jcI:cy;
     let it=0,mag=0n;
     while(it<max){const xx=(zx*zx)>>shift,yy=(zy*zy)>>shift;mag=xx+yy;if(mag>escape)break;const xy=(zx*zy)>>shift;const nx=xx-yy+cr,ny=(xy<<1n)+ci;zx=nx;zy=ny;it++;}
@@ -206,7 +226,7 @@ async function renderDeep(cfg,w,h){
 }
 
 async function render(cfg){
- const job=cfg.job,w=cfg.width,h=cfg.height,type=cfg.type;
+ const job=cfg.job,w=cfg.width,h=cfg.height,type=cfg.type;cfg._cos=Math.cos(cfg.rotation||0);cfg._sin=Math.sin(cfg.rotation||0);
  let data;
  if(cfg.deep){
   data=await renderDeep(cfg,w,h);
@@ -238,7 +258,7 @@ async function render(cfg){
    const ymax=Math.min(h,y0+10);
    for(let py=y0;py<ymax;py++){
     for(let px=0;px<w;px++){
-     const u=(px-w/2)/min*scale+cx,v=(py-h/2)/min*scale+cy,k=(py*w+px)*4;
+     const [u,v]=pixelWorld(px,py,cfg,w,h),k=(py*w+px)*4;
      let t=0,inside=false;
      if(type==='carpet'||type==='vicsek'||type==='cantor'||type==='cantor-dust'){
       const bs=cfg.baseScale||scale,bx=cfg.baseCx||0,by=cfg.baseCy||0;inside=geometricPixel(type,(u-(bx-bs/2))/bs,(v-(by-bs/2))/bs,depth);t=inside?0.78:0;
