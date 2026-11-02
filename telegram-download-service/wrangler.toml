@@ -1,0 +1,11 @@
+name = "fractal-art-download"
+main = "worker.mjs"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Sostituisci con l'origine ESATTA di GitHub Pages, senza slash finale.
+ALLOWED_ORIGIN = "https://YOUR_USERNAME.github.io"
+
+[[r2_buckets]]
+binding = "FRACTAL_IMAGES"
+bucket_name = "fractal-art-exports"

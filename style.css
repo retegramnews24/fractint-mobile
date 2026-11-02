@@ -165,13 +165,11 @@ body.art-only .render-overlay.show ~ .export-dock{opacity:0}
 body.art-only .save-sheet{display:block!important}
 @media(max-width:500px){.export-dock{bottom:calc(env(safe-area-inset-bottom,0px) + 10px);}.save-sheet{bottom:calc(env(safe-area-inset-bottom,0px) + 8px)}}
 
-/* v4.7 — una sola collezione: menu laterale rimosso, ricerca rapida e A—Z. */
-.gallery-tools{display:flex;align-items:center;gap:10px;min-width:0}
-.art-search-wrap{display:flex;align-items:center;gap:5px;height:28px;width:min(210px,35vw);padding:0 9px;border-radius:15px;background:#ffffff0a;border:1px solid #ffffff1e;color:#b09ac7}
-.art-search-wrap span{font-size:18px;line-height:1}
-.art-search-wrap input{width:100%;min-width:0;background:transparent;border:0;outline:0;color:#f6ebff;font:11px var(--sans);appearance:none}
-.art-search-wrap input::placeholder{color:#9784a9}
-.art-search-wrap input::-webkit-search-cancel-button{filter:grayscale(1) brightness(2)}
-.gallery-empty{display:flex;align-items:center;padding:10px 14px;font-size:12px;color:#aa96bc}
-@media(max-width:760px){.gallery-tools{gap:7px}.art-search-wrap{width:clamp(100px,33vw,180px);height:26px;padding:0 7px}.art-search-wrap input{font-size:10px}.art-search-wrap input::placeholder{color:#9784a9}.gallery-heading h2{font-size:14px}.gallery-count{white-space:nowrap;font-size:9px}}
-@media(max-width:350px){.art-search-wrap{width:100px}.gallery-heading h2{font-size:13px}.gallery-tools{gap:4px}}
+/* v4.6 repair: never stretch old raster during viewport transitions. */
+body.art-only .visual-stage canvas{object-fit:contain!important;object-position:center center!important}
+body.art-only .visual-stage canvas#previewCanvas{object-fit:fill!important}
+.save-sheet-simple .save-primary,.save-sheet-simple .save-secondary{display:block;cursor:pointer}
+.save-sheet-simple .save-primary{background:#6642aa;font-weight:800}
+.save-sheet-simple .save-secondary{background:#30253e;border:1px solid #8e72aa55}
+.save-sheet-simple .save-status{line-height:1.55;font-size:12px;color:#e0cde9}
+.save-sheet-simple img{max-height:25dvh}
