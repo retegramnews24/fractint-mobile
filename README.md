@@ -1,12 +1,12 @@
-# Fractal Art Explorer — Telegram Mini App v4.3
+# Fractal Art Explorer — Telegram Mini App v4.4
 
 Una galleria interattiva di forme frattali, geometrie autosimili, mappe caotiche, attrattori, sistemi stocastici e sculture 3D. Progetto statico pronto per GitHub Pages.
 
-## Novità v4.3
-- In modalità immersiva viene mostrata una percentuale di rendering con barra di avanzamento. L'indicatore raggiunge il 100% solo quando il frame è pronto, poi scompare lasciando la tela senza interfaccia.
-- Quattro profili di qualità per lo screenshot: Schermo, HD, QHD e Ultra. Entrando a tutto schermo l'opera viene ricalcolata con il profilo scelto.
-- Il renderer 2D usa un buffer canvas alla risoluzione di calcolo, con sovracampionamento e limiti di memoria/pixel; il renderer 3D WebGL2 aumenta la risoluzione del framebuffer in base al profilo scelto.
-- La risoluzione viene adattata automaticamente ai dispositivi con poca memoria o pochi core, per ridurre il rischio di blocchi.
+## Correzione v4.4
+- Entrare a tutto schermo è tornato ad essere immediato e puramente visivo: nasconde l'interfaccia e mantiene il frame corrente, senza avviare render automatici.
+- La selezione esplicita di Schermo, HD, QHD o Ultra prepara **un solo** render ad alta qualità. Premendo ⛶, e solo in quel caso, parte il calcolo con percentuale di avanzamento; al completamento l’indicatore scompare.
+- Senza una qualità selezionata, ⛶ mostra immediatamente il frame corrente e non avvia alcun calcolo. Zoom e spostamento non forzano render Ultra/HD: così non si crea il ciclo di ricalcoli che sembrava un caricamento infinito.
+- I profili di qualità continuano a usare sovracampionamento e limiti automatici di memoria/pixel; il renderer 3D WebGL2 regola il framebuffer in base al profilo scelto.
 
 ## Novità v4.2
 - Splash screen iniziale di 5 secondi con frattale Julia animato, palette luminosa, marchio e indicatore di avanzamento. Al termine sfuma e apre l’esploratore. Tutta l’interfaccia e le funzioni della v4.1 restano invariate.
@@ -31,7 +31,7 @@ Tocca il pulsante **HD** nella barra superiore e scegli la qualità:
 - **QHD**: sovracampionamento fino a 2×.
 - **Ultra**: sovracampionamento fino a 2,5×, con tetto automatico alla memoria e al numero di pixel del dispositivo.
 
-Poi tocca ⛶. La Mini App ricalcola l'opera e mostra la percentuale in basso. Quando compare il 100%, la barra scompare e resta soltanto la grafica, pronta per lo screenshot del telefono.
+Scegli prima Schermo, HD, QHD o Ultra dal pulsante HD. Poi tocca ⛶: soltanto se hai scelto un profilo parte un unico render ad alta qualità con percentuale; al 100% l’indicatore scompare. Se non selezioni un profilo, ⛶ entra subito a tutto schermo mostrando il frame corrente, senza avviare calcoli.
 
 **Nota sulla risoluzione:** lo screenshot fatto con i tasti Android ha comunque il numero di pixel fisici dello schermo. I profili HD/QHD/Ultra fanno calcolare il frattale a risoluzione maggiore prima di ridurlo sul display, migliorando il dettaglio e l'antialiasing visibile; non trasformano uno screenshot del telefono in un file 4K nativo. Per un file realmente più grande del display servirebbe un'esportazione immagine separata, che in questa app resta volutamente rimossa.
 
