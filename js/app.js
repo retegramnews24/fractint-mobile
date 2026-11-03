@@ -2,6 +2,54 @@
 const $=id=>document.getElementById(id),catalog=window.FRACTAL_CATALOG;let active=catalog[0],category='all',job=0,worker=null,renderer3d=null,centerX=-.5,centerY=0,scale=3.2,rotation=0,iterations=220,power=2,palette='cosmic',juliaReal=-.8,juliaImag=.156,quality=.7,drag=null,pinch=null,renderTimer=0,is3d=false,collapsed=false,deepEnabled=false,deepBits=512,deepCx=0n,deepCy=0n,deepScale=0n,favorites=new Set((()=>{try{return JSON.parse(localStorage.getItem('fractint-favorites')||'[]')}catch(_){return []}})());
 const canvas2d=$('canvas2d'),canvas3d=$('canvas3d'),previewCanvas=$('previewCanvas'),stage=$('visualStage');
 let lastFrame=null,lastRenderView=null,activeRenderView=null,previewActive=false;
+// Color cycling is a compositor-only filter over the existing image: never
+// cancels a render, modifies camera coordinates, or schedules a new worker job.
+// Web Animations preserves the hue phase when changing speed or pausing.
+let colorCycleOn=false,colorCycleRate=1,colorCycleAnimations=[],colorCycleFallback=false;
+function initColorCycle(){
+ const canvases=[canvas2d,canvas3d,previewCanvas];
+ colorCycleFallback=typeof canvas2d.animate!=='function';
+ if(!colorCycleFallback){
+  try{
+   colorCycleAnimations=canvases.map(c=>{
+    const a=c.animate([{filter:'hue-rotate(0deg)'},{filter:'hue-rotate(360deg)'}],
+      {duration:36000,iterations:Infinity,easing:'linear',fill:'both'});
+    a.pause();return a;
+   });
+  }catch(e){
+   for(const a of colorCycleAnimations)a.cancel();
+   colorCycleAnimations=[];colorCycleFallback=true;
+  }
+ }
+ const btn=$('colorCycleBtn'),speed=$('colorCycleSpeed');
+ btn.addEventListener('click',()=>setColorCycle(!colorCycleOn));
+ speed.addEventListener('change',()=>{
+  colorCycleRate=Math.max(.5,Math.min(4,Number(speed.value)||1));
+  if(colorCycleFallback){stage.style.setProperty('--hue-cycle-duration',(36/colorCycleRate)+'s');}
+  else for(const a of colorCycleAnimations){
+   if(typeof a.updatePlaybackRate==='function')a.updatePlaybackRate(colorCycleRate);
+   else a.playbackRate=colorCycleRate;
+  }
+ });
+ speed.dispatchEvent(new Event('change'));
+}
+function setColorCycle(enable,reset=false){
+ colorCycleOn=!!enable;
+ const btn=$('colorCycleBtn');
+ btn.setAttribute('aria-pressed',String(colorCycleOn));
+ btn.classList.toggle('playing',colorCycleOn);
+ btn.innerHTML=colorCycleOn?'Ⅱ <span>PAUSA</span>':'↻ <span>CICLA</span>';
+ btn.title=colorCycleOn?'Metti in pausa il ciclo colori':'Riprendi il ciclo colori';
+ if(colorCycleFallback){
+  stage.classList.toggle('cycle-colors',colorCycleOn||!reset);
+  stage.classList.toggle('cycle-colors-paused',!colorCycleOn);
+  if(reset)stage.classList.remove('cycle-colors');
+ }else for(const a of colorCycleAnimations){
+  if(reset)a.currentTime=0;
+  if(colorCycleOn)a.play();else a.pause();
+ }
+}
+
 // A separate, lightweight copy of the real renderer builds a wider low-resolution
 // map around the visible frame. It keeps unexplored edges filled during gestures.
 let overviewWorker=null,overviewFrame=null,overviewView=null,overviewPendingView=null,overviewJob=0,overviewBusy=false,overviewRefresh=false;
@@ -27,7 +75,7 @@ function overviewGood(view){
 function ensureOverviewWorker(){
  if(overviewWorker||typeof Worker==='undefined')return !!overviewWorker;
  try{
-  overviewWorker=new Worker('js/render-worker.js?v=469');
+  overviewWorker=new Worker('js/render-worker.js?v=4610');
   overviewWorker.onmessage=e=>{
    const m=e.data;if(m.job!==overviewJob||m.progress!==undefined)return;
    overviewBusy=false;
@@ -109,7 +157,7 @@ function deepAllowed(){return ['mandelbrot','julia'].includes(active.id);}
 function setDeepMode(enabled){if(enabled&&!deepAllowed()){showToast('Precisione multipla disponibile per Mandelbrot e Julia');return;}if(enabled&&!deepEnabled){if(typeof BigInt!=='function'){showToast('Questo dispositivo non supporta BigInt');return;}deepInit();}else if(!enabled&&deepEnabled){updateDeepApprox();deepEnabled=false;}$('deepZoomBtn')?.classList.toggle('active',deepEnabled);$('deepZoomBtn')?.setAttribute('aria-pressed',String(deepEnabled));$('deepZoomBtn').innerHTML=deepEnabled?'∞ <span>DEEP ON</span>':'∞ <span>DEEP ZOOM</span>';updateHUD();scheduleDraw();}
 function setDeepPrecision(bits){bits=+bits;if(![128,256,512,1024].includes(bits))return;if(!deepEnabled){deepBits=bits;return;}deepCx=fixedRescale(deepCx,deepBits,bits);deepCy=fixedRescale(deepCy,deepBits,bits);deepScale=fixedRescale(deepScale,deepBits,bits);deepBits=bits;if(deepScale<minDeepSpan())deepScale=minDeepSpan();updateDeepApprox();scheduleDraw();updateHUD();}
 function deepZoomAt(f,x,y){const r=canvas2d.getBoundingClientRect(),px=(x??(r.left+r.width/2))-r.left,py=(y??(r.top+r.height/2))-r.top,s=Math.min(r.width,r.height);const ox=deepRatioQ(2*px-r.width,2*s),oy=deepRatioQ(2*py-r.height,2*s);const wx=deepCx+fixedMul(ox,deepScale),wy=deepCy+fixedMul(oy,deepScale);f=Math.max(.05,Math.min(20,Number(f)||1));deepScale=fixedMul(deepScale,numberToFixed(f));if(deepScale<minDeepSpan())deepScale=minDeepSpan();deepCx=wx-fixedMul(ox,deepScale);deepCy=wy-fixedMul(oy,deepScale);updateDeepApprox();scheduleDraw();updateHUD();}
-function initWorker(){try{worker=new Worker('js/render-worker.js?v=469');worker.onmessage=e=>{let m=e.data;if(m.job!==job)return;if(m.progress!==undefined){workerProgress(m.progress);return;}if(m.error){console.warn('Errore renderer:',m.error);showFallback2d();hideLoader();return;}const image=new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height);if(canvas2d.width!==m.width)canvas2d.width=m.width;if(canvas2d.height!==m.height)canvas2d.height=m.height;const ctx=canvas2d.getContext('2d',{alpha:false});ctx.putImageData(image,0,0);lastFrame=document.createElement('canvas');lastFrame.width=canvas2d.width;lastFrame.height=canvas2d.height;lastFrame.getContext('2d').drawImage(canvas2d,0,0);lastRenderView=activeRenderView||getViewState();clearPreview();finishLoader();updateStats();};worker.onerror=e=>{console.warn('Worker non disponibile',e);worker?.terminate();worker=null;showFallback2d();hideLoader();showToast('Anteprima semplificata: motore in riavvio');};}catch(e){console.warn('Impossibile avviare il worker',e);worker=null;showFallback2d();}}
+function initWorker(){try{worker=new Worker('js/render-worker.js?v=4610');worker.onmessage=e=>{let m=e.data;if(m.job!==job)return;if(m.progress!==undefined){workerProgress(m.progress);return;}if(m.error){console.warn('Errore renderer:',m.error);showFallback2d();hideLoader();return;}const image=new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height);if(canvas2d.width!==m.width)canvas2d.width=m.width;if(canvas2d.height!==m.height)canvas2d.height=m.height;const ctx=canvas2d.getContext('2d',{alpha:false});ctx.putImageData(image,0,0);lastFrame=document.createElement('canvas');lastFrame.width=canvas2d.width;lastFrame.height=canvas2d.height;lastFrame.getContext('2d').drawImage(canvas2d,0,0);lastRenderView=activeRenderView||getViewState();clearPreview();finishLoader();updateStats();};worker.onerror=e=>{console.warn('Worker non disponibile',e);worker?.terminate();worker=null;showFallback2d();hideLoader();showToast('Anteprima semplificata: motore in riavvio');};}catch(e){console.warn('Impossibile avviare il worker',e);worker=null;showFallback2d();}}
 
 function showFallback2d(){
  if(is3d)return;
@@ -358,7 +406,7 @@ function setupInteractions(){
  $('palette').onchange=e=>{palette=e.target.value;syncPaletteButtons();scheduleDraw();};$('paletteCycle').onclick=()=>{let list=[...$('palette').options].map(o=>o.value),i=list.indexOf(palette);palette=list[(i+1)%list.length];$('palette').value=palette;syncPaletteButtons();scheduleDraw();};$('preset').onchange=e=>applyPreset(+e.target.value);
  $('resetBtn').onclick=resetView;$('zoomIn').onclick=()=>zoom(.7);$('zoomOut').onclick=()=>zoom(1.4);$('deepZoomBtn').onclick=()=>setDeepMode(!deepEnabled);$('deepPrecision').onchange=e=>setDeepPrecision(+e.target.value);$('randomBtn').onclick=randomFractal;$('favoriteBtn').onclick=toggleFavorite;$('formulaInfoBtn').onclick=showFormulaInfo;$('highQualityBtn').onclick=()=>is3d?draw3d(true):draw2d(true);$('randomJulia').onclick=()=>{juliaReal=+(Math.random()*1.2-.6).toFixed(3);juliaImag=+(Math.random()*1.2-.6).toFixed(3);$('juliaReal').value=juliaReal;$('juliaImag').value=juliaImag;$('juliaRealValue').value=juliaReal.toFixed(2);$('juliaImagValue').value=juliaImag.toFixed(3);selectFormula('julia');};
  $('fullscreenBtn').onclick=()=>toggleArtOnly();
- $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa. Il pulsante ↻ CICLA anima le tinte; scegli ½×–4× per la velocità e ripremilo per fermarle.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
  $('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal();};
  $('openLibrary').onclick=()=>$('library').classList.add('open');$('closeLibrary').onclick=()=>$('library').classList.remove('open');$('collapseControls').onclick=()=>{$('controlPanel').classList.toggle('collapsed');};
  const pointerDown=e=>{
@@ -445,9 +493,9 @@ function initArtExplorer(){
  $('resetBtn').onclick=()=>applyArtPreset(activeArtId||'violet-reverie');
  $('favoriteBtn').onclick=()=>toggleFavorite();
  $('formulaInfoBtn').onclick=()=>{const p=(window.FRACTAL_ART_PRESETS||[]).find(x=>x.id===activeArtId);if(!p)return;$('modalContent').innerHTML=`<div class="modal-kicker">${p.subtitle}</div><h2>${p.title}</h2><p>Una piccola finestra su un mondo infinito. Lasciati guidare dalle forme, cambia colore e segui i dettagli: ogni viaggio è unico.</p>`;openModal();};
- $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa. Il pulsante ↻ CICLA anima le tinte; scegli ½×–4× per la velocità e ripremilo per fermarle.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
 }
 
-function start(){stageGeometryRef=screenGeometry();if(typeof ResizeObserver!=='undefined')new ResizeObserver(scheduleGeometrySync).observe(stage);setupPaletteChooser();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{scheduleGeometrySync();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=469',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
+function start(){stageGeometryRef=screenGeometry();if(typeof ResizeObserver!=='undefined')new ResizeObserver(scheduleGeometrySync).observe(stage);setupPaletteChooser();initColorCycle();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{scheduleGeometrySync();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=4610',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
 try{start();}catch(e){console.error('Avvio Fractal Art Explorer:',e);const g=document.getElementById('artCards');if(g&&!g.children.length&&window.FRACTAL_ART_PRESETS){g.innerHTML=window.FRACTAL_ART_PRESETS.map(p=>`<button class="art-card" onclick="location.reload()"><span class="art-card-copy"><strong>${p.title}</strong><small>${p.subtitle}</small></span></button>`).join('');}const status=document.getElementById('engineStatus');if(status)status.textContent='AVVIO INCOMPLETO — RIAPRI LA MINI APP';}
 })();

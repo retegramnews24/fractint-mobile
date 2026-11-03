@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#090812"><meta name="description" content="Fractal Art Explorer — entra in mondi di colore, forme e meraviglia.">
-<title>Fractal Art Explorer</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="assets/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css?v=469">
+<title>Fractal Art Explorer</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="assets/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css?v=4610">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -51,7 +51,12 @@
         <div class="stage-hint" id="stageHint">TRASCINA PER SPOSTARE · DUE DITA PER ZOOM E ROTAZIONE</div>
         <button class="stage-zoom zoom-plus" id="zoomIn" aria-label="Zoom avanti">+</button><button class="stage-zoom zoom-minus" id="zoomOut" aria-label="Zoom indietro">−</button>
       </section>
-      <div class="bottom-toolbar"><div class="palette-strip" id="paletteStrip" aria-label="Palette colori"></div><div class="bottom-actions"><button class="mini-btn color-shuffle" id="colorSurpriseBtn" title="Cambia colori a sorpresa">✦ COLORI</button><button class="mini-btn" id="favoriteBtn" title="Aggiungi ai preferiti">♡</button><button class="mini-btn" id="formulaInfoBtn" title="Dettagli opera">✧</button></div></div>
+      <div class="bottom-toolbar"><div class="palette-strip" id="paletteStrip" aria-label="Palette colori"></div><div class="bottom-actions"><div class="color-cycle-controls" role="group" aria-label="Ciclo colori">
+  <button class="color-cycle-button" type="button" id="colorCycleBtn" aria-pressed="false" title="Avvia il ciclo cromatico continuo">↻ <span>CICLA</span></button>
+  <select class="color-cycle-speed" id="colorCycleSpeed" aria-label="Velocità del ciclo colori" title="Velocità colori">
+    <option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+  </select>
+</div><button class="mini-btn color-shuffle" id="colorSurpriseBtn" title="Cambia colori a sorpresa">✦ COLORI</button><button class="mini-btn" id="favoriteBtn" title="Aggiungi ai preferiti">♡</button><button class="mini-btn" id="formulaInfoBtn" title="Dettagli opera">✧</button></div></div>
 <section class="art-gallery" id="artGallery"><div class="gallery-heading"><div><div class="eyebrow">LA COLLEZIONE</div><h2>Lasciati sorprendere</h2></div><span class="gallery-count" id="artCount">123 opere</span></div><div class="art-filters" id="artFilters"><button class="art-filter active" data-art-filter="all">Tutte</button><button class="art-filter" data-art-filter="cosmos">Cosmo</button><button class="art-filter" data-art-filter="floral">Fiori</button><button class="art-filter" data-art-filter="geometry">Geometrie</button><button class="art-filter" data-art-filter="nature">Natura</button><button class="art-filter" data-art-filter="chaos">Caos</button><button class="art-filter" data-art-filter="random">Organiche</button><button class="art-filter" data-art-filter="three">3D</button></div><div class="art-cards" id="artCards"></div></section>
     </main>
     <aside class="control-panel" id="controlPanel">
@@ -68,10 +73,10 @@
         <div class="control-actions"><button class="action-btn secondary" id="randomJulia">Julia casuale</button><button class="action-btn secondary" id="highQualityBtn">Applica qualità</button></div>
         <div class="stats-card"><div><span>POSIZIONE</span><b id="positionStat">−0.500 / 0.000</b></div><div><span>FATTORE ZOOM</span><b id="zoomStat">1.00×</b></div><div><span>RENDER</span><b id="renderStat">Canvas CPU</b></div></div>
       </div>
-      <div class="panel-bottom"><span>FRACTINT MINI</span><span>v4.6.9</span></div>
+      <div class="panel-bottom"><span>FRACTINT MINI</span><span>v4.6.10</span></div>
     </aside>
   </div>
 </div>
 <div class="modal-backdrop" id="modalBackdrop"><section class="modal" id="modal"><button class="modal-close" id="modalClose">×</button><div id="modalContent"></div></section></div>
-<script src="js/palettes.js?v=469"></script><script src="js/catalog.js?v=469"></script><script src="js/art-presets.js?v=469"></script><script src="js/renderer3d.js?v=469"></script><script src="js/app.js?v=469"></script><script src="js/splash.js?v=469"></script>
+<script src="js/palettes.js?v=4610"></script><script src="js/catalog.js?v=4610"></script><script src="js/art-presets.js?v=4610"></script><script src="js/renderer3d.js?v=4610"></script><script src="js/app.js?v=4610"></script><script src="js/splash.js?v=4610"></script>
 </body></html>

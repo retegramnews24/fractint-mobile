@@ -1,3 +1,21 @@
+# Fractal Art Explorer v4.6.10 — Ciclo cromatico
+
+Questa release usa la **v4.6.9 stabile** come base, senza modificare i suoi algoritmi di zoom, trascinamento, proiezione fullscreen o anteprima offscreen.
+
+### Nuovo comando
+
+Nella barra delle palette trovi **↻ CICLA** e un selettore velocità. Premi ↻ per avviare il ciclo continuo e Ⅱ per metterlo in pausa; il colore resta fermo dove lo hai lasciato. Le velocità sono ½× (un giro in 72 secondi), 1× (36 s), 2× (18 s) e 4× (9 s). I colori cambiano in modo continuo tramite filtro di composizione GPU, non rilanciando i calcoli del frattale. Funziona anche con zoom, pan, anteprima offscreen, opere 2D e 3D e nella modalità tutto schermo.
+
+### Installazione
+
+Carica **tutti** i file nella root di GitHub Pages, sostituendo i precedenti. La service worker cache ora è `fae-v4-6-10-color-cycle` per evitare file mescolati tra versioni. Non servono bot token, server, o servizi esterni.
+
+### Limiti
+
+Il ciclo cromatico è una trasformazione cromatica fluida dell'immagine già calcolata, distinta dallo scorrimento attraverso le 32 palette; queste rimangono comunque selezionabili manualmente. La visualizzazione WebGL2 dipende dalla disponibilità della GPU Android.
+
+---
+
 # Fractal Art Explorer v4.6.9 — Mappa stabile + preview ad alta definizione
 
 Basata sulla versione **4.6.8**; non contiene modifiche della v4.7.

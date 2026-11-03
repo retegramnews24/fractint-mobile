@@ -142,3 +142,22 @@ body.art-only #canvas2d.hidden,body.art-only #canvas3d.hidden{display:none!impor
 .visual-stage #previewCanvas {object-fit:contain!important;object-position:center center!important;}
 .visual-stage.reprojecting #canvas2d {visibility:hidden!important;}
 .visual-stage.reprojecting #previewCanvas {visibility:visible!important;}
+
+/* v4.6.10 — simple continuous color wheel. Keeps the 4.6.9 camera and renderer untouched. */
+.color-cycle-controls{display:flex;align-items:center;gap:4px;flex:none}
+.color-cycle-button{height:31px;min-width:62px;border-radius:999px;padding:0 8px;white-space:nowrap;border:1px solid #776092;background:#241b36;color:#e4c9ff;font:700 10px system-ui,sans-serif;letter-spacing:.035em;cursor:pointer}
+.color-cycle-button.playing{background:linear-gradient(125deg,#8853c1,#4b4089);border-color:#c7a4fc;color:white;box-shadow:0 0 12px #b77af446}
+.color-cycle-speed{height:30px;min-width:48px;width:56px;padding:0 3px;border:1px solid #49395b;border-radius:8px;background:#171327;color:#e3caef;font:11px system-ui,sans-serif;outline:none}
+.color-cycle-button:focus-visible,.color-cycle-speed:focus-visible{outline:2px solid #c4a1ff;outline-offset:2px}
+/* Only used for old Android WebViews without Element.animate. */
+.visual-stage.cycle-colors #canvas2d,
+.visual-stage.cycle-colors #canvas3d,
+.visual-stage.cycle-colors #previewCanvas{animation:fae-hue-cycle var(--hue-cycle-duration,36s) linear infinite}
+.visual-stage.cycle-colors.cycle-colors-paused #canvas2d,
+.visual-stage.cycle-colors.cycle-colors-paused #canvas3d,
+.visual-stage.cycle-colors.cycle-colors-paused #previewCanvas{animation-play-state:paused}
+@keyframes fae-hue-cycle{from{filter:hue-rotate(0deg)}to{filter:hue-rotate(360deg)}}
+@media(max-width:430px){.bottom-toolbar{gap:4px}.bottom-actions{gap:3px}.color-cycle-controls{gap:3px}.color-cycle-button{width:32px;min-width:32px;padding:0;font-size:15px}.color-cycle-button span{display:none}.color-cycle-speed{width:45px;min-width:45px;font-size:10px}.palette-strip{gap:3px}}
+/* Keep the pre-existing surprise-color action contained on narrow screens. */
+.bottom-actions .color-shuffle{font-size:0;display:grid;place-items:center;overflow:hidden;white-space:nowrap;flex:none}
+.bottom-actions .color-shuffle::before{content:'✦';font-size:17px;line-height:1}
