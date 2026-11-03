@@ -86,8 +86,9 @@ function refreshInterfaceTheme(){
  tg?.setHeaderColor?.(mixHex('#0b1020',primary,.15));
  tg?.setBackgroundColor?.(mixHex('#080b16',secondary,.10));
 }
-function primeProgressivePreview(){
+function primeProgressivePreview(targetW,targetH){
  if(previewCanvas){previewCanvas.style.opacity='1';previewCanvas.style.transition='opacity .16s linear';}
+ seedRenderBase(targetW,targetH);
 }
 function paintRenderChunk(m){
  if(!m||m.job!==job||is3d)return;
@@ -99,7 +100,6 @@ function paintRenderChunk(m){
   stage.classList.remove('reprojecting');
   ctx.putImageData(image,0,m.y);
   const p=Math.max(0,Math.min(100,Math.round(m.progress??((m.y+m.height)/Math.max(1,m.fullHeight))*100)));
-  if(previewActive&&previewCanvas){previewCanvas.style.opacity=String(Math.max(.05,1-p/100));if(p>96)previewCanvas.style.opacity='0.04';}
   if(!activeRenderAutomatic)workerProgress(p);
  }catch(err){console.warn('Chunk render fallito:',err);}
 }
@@ -129,7 +129,7 @@ function overviewGood(view){
 function ensureOverviewWorker(){
  if(overviewWorker||typeof Worker==='undefined')return !!overviewWorker;
  try{
-  overviewWorker=new Worker('js/render-worker.js?v=4612');
+  overviewWorker=new Worker('js/render-worker.js?v=4613');
   overviewWorker.onmessage=e=>{
    const m=e.data;if(m.job!==overviewJob||m.progress!==undefined)return;
    overviewBusy=false;
@@ -215,7 +215,7 @@ function setRenderProgress(value){const pct=Math.max(0,Math.min(100,Math.round(v
 function showLoader(msg='CALCOLO IN CORSO',estimateMs=3500){
  clearInterval(renderProgressTimer);clearTimeout(renderHideTimer);renderToken++;
  renderStartedAt=performance.now();renderEstimateMs=Math.max(650,Math.min(45000,estimateMs||3500));renderHasWorkerProgress=false;
- $('renderMessage').textContent=msg;$('renderQualityHint').textContent='LIVELLI E SFUMATURE IN ARRIVO';setRenderProgress(1);primeProgressivePreview();
+ $('renderMessage').textContent=msg;$('renderQualityHint').textContent='LIVELLI E SFUMATURE IN ARRIVO';setRenderProgress(1);
  $('renderOverlay').classList.add('show');$('engineStatus').innerHTML='<i style="background:#efbd67"></i> RENDERING';
  const token=renderToken;
  renderProgressTimer=setInterval(()=>{if(token!==renderToken||renderHasWorkerProgress)return;const elapsed=performance.now()-renderStartedAt;const estimated=4+90*(1-Math.exp(-elapsed/renderEstimateMs));setRenderProgress(Math.min(94,estimated));},120);
@@ -239,7 +239,7 @@ function setDeepPrecision(bits){bits=+bits;if(![128,256,512,1024].includes(bits)
 function deepZoomAt(f,x,y){const r=canvas2d.getBoundingClientRect(),px=(x??(r.left+r.width/2))-r.left,py=(y??(r.top+r.height/2))-r.top,s=Math.min(r.width,r.height);const ox=deepRatioQ(2*px-r.width,2*s),oy=deepRatioQ(2*py-r.height,2*s);const wx=deepCx+fixedMul(ox,deepScale),wy=deepCy+fixedMul(oy,deepScale);f=Math.max(.05,Math.min(20,Number(f)||1));deepScale=fixedMul(deepScale,numberToFixed(f));if(deepScale<minDeepSpan())deepScale=minDeepSpan();deepCx=wx-fixedMul(ox,deepScale);deepCy=wy-fixedMul(oy,deepScale);updateDeepApprox();scheduleDraw();updateHUD();}
 function initWorker(){
  try{
-  worker=new Worker('js/render-worker.js?v=4612');
+  worker=new Worker('js/render-worker.js?v=4613');
   worker.onmessage=e=>{
    const m=e.data;if(m.job!==job)return;
    if(m.chunk){paintRenderChunk(m);return;}
@@ -309,6 +309,7 @@ function draw2d(hd=false,automatic=false){
  fullscreenPendingRender=false;
  if(showProgress)showLoader(deepEnabled?'INFINITE DETAIL · '+deepBits+' BIT':'LIVING CANVAS',estimate);
  else hideLoader();
+ primeProgressivePreview(w,h);
  $('renderQualityHint').textContent=`${w} × ${h} · ${mp.toFixed(1)} MP · ${highQuality?(automatic?'RIFINITURA PROGRESSIVA':'ALTA DEFINIZIONE'):'STRATI PROGRESSIVI'}`;
  if(!highQuality)requestOverview();
  const cfg={job,width:w,height:h,type:active.id,cx:centerX,cy:centerY,scale,
@@ -352,6 +353,36 @@ function paintReference(ctx,frame,from,rect,d,opacity=1){
  ctx.rotate((from.rotation||0)-rotation);
  ctx.drawImage(frame,-dw*d/2,-dh*d/2,dw*d,dh*d);
  ctx.restore();return true;
+}
+
+function seedRenderBase(targetW,targetH){
+ if(is3d)return false;
+ const hasDetail=lastFrame&&lastRenderView&&lastRenderView.id===active.id;
+ const hasOverview=overviewFrame&&overviewView&&overviewView.id===active.id;
+ if(!hasDetail&&!hasOverview)return false;
+ const rect=stage.getBoundingClientRect();
+ if(rect.width<1||rect.height<1||targetW<2||targetH<2)return false;
+ if(canvas2d.width!==targetW)canvas2d.width=targetW;
+ if(canvas2d.height!==targetH)canvas2d.height=targetH;
+ const ctx=canvas2d.getContext('2d',{alpha:false});
+ const d=targetW/Math.max(1,rect.width);
+ ctx.setTransform(1,0,0,1,0,0);
+ ctx.clearRect(0,0,targetW,targetH);
+ if(!hasOverview&&hasDetail){
+  const oldRatio=lastRenderView.stageW/Math.max(1,lastRenderView.stageH);
+  const fittedW=Math.max(targetW,targetH*oldRatio),fittedH=fittedW/oldRatio;
+  const coverScale=Math.max(targetW/fittedW,targetH/fittedH);
+  const fw=fittedW*coverScale,fh=fittedH*coverScale;
+  ctx.save();ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+  ctx.filter='blur(13px) brightness(.68)';
+  ctx.drawImage(lastFrame,(targetW-fw)/2,(targetH-fh)/2,fw,fh);
+  ctx.restore();
+ }
+ if(hasOverview)paintReference(ctx,overviewFrame,overviewView,rect,d,1);
+ if(hasDetail)paintReference(ctx,lastFrame,lastRenderView,rect,d,1);
+ clearPreview();
+ stage.classList.remove('reprojecting');
+ return true;
 }
 function updatePreview(){
  if(is3d||!previewCanvas)return;
@@ -657,6 +688,6 @@ function initArtExplorer(){
  $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa. Il pulsante ↻ CICLA anima le tinte; scegli ½×–4× per la velocità e ripremilo per fermarle.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
 }
 
-function start(){stageGeometryRef=screenGeometry();uiThemeBase=INTERFACE_THEMES[Math.floor(Math.random()*INTERFACE_THEMES.length)];refreshInterfaceTheme();if(typeof ResizeObserver!=='undefined')new ResizeObserver(scheduleGeometrySync).observe(stage);setupPaletteChooser();initColorCycle();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{scheduleGeometrySync();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=4612',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
+function start(){stageGeometryRef=screenGeometry();uiThemeBase=INTERFACE_THEMES[Math.floor(Math.random()*INTERFACE_THEMES.length)];refreshInterfaceTheme();if(typeof ResizeObserver!=='undefined')new ResizeObserver(scheduleGeometrySync).observe(stage);setupPaletteChooser();initColorCycle();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{scheduleGeometrySync();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=4613',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
 try{start();}catch(e){console.error('Avvio Fractal Art Explorer:',e);const g=document.getElementById('artCards');if(g&&!g.children.length&&window.FRACTAL_ART_PRESETS){g.innerHTML=window.FRACTAL_ART_PRESETS.map(p=>`<button class="art-card" onclick="location.reload()"><span class="art-card-copy"><strong>${p.title}</strong><small>${p.subtitle}</small></span></button>`).join('');}const status=document.getElementById('engineStatus');if(status)status.textContent='AVVIO INCOMPLETO — RIAPRI LA MINI APP';}
 })();

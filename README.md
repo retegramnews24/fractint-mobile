@@ -1,19 +1,22 @@
-# Fractal Art Explorer v4.6.12 — Interfaccia artistica fluida
+# Fractal Art Explorer v4.6.13 — Base progressiva sempre visibile
 
-Questa versione parte dalla **4.6.11** e aggiunge rifiniture estetiche e di esperienza d’uso, senza toccare il catalogo o le funzioni principali.
+Questa build corregge il comportamento del rendering finale.
 
-## Novità
+## Correzione principale
 
-- **Interfaccia cromatica variabile** a ogni avvio, con accenti dinamici armonizzati con la palette scelta.
-- **Barra di rendering in basso**, a tutta larghezza, anche in modalità immersiva / fullscreen.
-- **Rendering progressivo visibile**: durante il render 2D e deep zoom l’immagine compare a strati/chunk invece di apparire tutta insieme.
-- **Anteprima offscreen sfumata** durante la ricostruzione, così il passaggio tra vecchia e nuova immagine risulta più morbido.
-- **Cache aggiornata** per forzare meglio il refresh su GitHub Pages e Telegram Mini App.
+Durante un nuovo render, l'immagine precedente **non sparisce più**:
 
-## Note
+- la vista precedente viene usata come **base visibile**;
+- il nuovo render la **sostituisce progressivamente**, a strati, dall'alto verso il basso;
+- la qualità quindi **migliora man mano**, invece di lasciare vuoti o far scomparire tutto sotto.
 
-Il rendering progressivo a chunk è attivo sui render 2D principali e sul deep zoom CPU. Alcune famiglie molto leggere o speciali possono ancora completarsi quasi in un solo passaggio, perché il loro calcolo è già molto rapido.
+## In pratica
+
+Quando cambi opera, palette, dettaglio o fai un render finale / HD:
+- vedi subito la vecchia immagine ricampionata come base;
+- il nuovo risultato si deposita sopra a chunk progressivi;
+- a fine render, la nuova immagine completa diventa la nuova base.
 
 ## Aggiornamento
 
-Sostituisci tutti i file del repository GitHub Pages mantenendo la struttura (`index.html`, `js/`, `assets/`). Poi chiudi completamente e riapri la Mini App Telegram.
+Sostituisci tutti i file sul repository GitHub Pages mantenendo la stessa struttura. Poi chiudi completamente Telegram e riapri la Mini App.
