@@ -1,1 +1,0 @@
-(() => { const tg=window.Telegram?.WebApp; if(!tg)return; try{tg.ready();tg.expand();tg.setHeaderColor?.('#080b12');tg.setBackgroundColor?.('#080b12');tg.disableVerticalSwipes?.();}catch(e){} window.FractintTelegram={tg}; })();
