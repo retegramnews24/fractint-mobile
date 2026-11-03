@@ -2,6 +2,63 @@
 const $=id=>document.getElementById(id),catalog=window.FRACTAL_CATALOG;let active=catalog[0],category='all',job=0,worker=null,renderer3d=null,centerX=-.5,centerY=0,scale=3.2,rotation=0,iterations=220,power=2,palette='cosmic',juliaReal=-.8,juliaImag=.156,quality=.7,drag=null,pinch=null,renderTimer=0,is3d=false,collapsed=false,deepEnabled=false,deepBits=512,deepCx=0n,deepCy=0n,deepScale=0n,favorites=new Set((()=>{try{return JSON.parse(localStorage.getItem('fractint-favorites')||'[]')}catch(_){return []}})());
 const canvas2d=$('canvas2d'),canvas3d=$('canvas3d'),previewCanvas=$('previewCanvas'),stage=$('visualStage');
 let lastFrame=null,lastRenderView=null,activeRenderView=null,previewActive=false;
+// A separate, lightweight copy of the real renderer builds a wider low-resolution
+// map around the visible frame. It keeps unexplored edges filled during gestures.
+let overviewWorker=null,overviewFrame=null,overviewView=null,overviewPendingView=null,overviewJob=0,overviewBusy=false,overviewRefresh=false;
+const OVERVIEW_SPAN=2.8;
+function stopOverview(){overviewJob++;overviewBusy=false;overviewRefresh=false;overviewFrame=null;overviewView=null;overviewPendingView=null;clearPreview();}
+function overviewGood(view){
+ if(!overviewFrame||!overviewView||overviewView.id!==view.id||overviewView.palette!==view.palette||overviewView.params!==view.params||overviewView.deep!==view.deep)return false;
+ if(Math.abs(Math.atan2(Math.sin((overviewView.rotation||0)-(view.rotation||0)),Math.cos((overviewView.rotation||0)-(view.rotation||0))))>.22)return false;
+ let relative=overviewView.scale/view.scale,dx=Math.hypot(overviewView.cx-view.cx,overviewView.cy-view.cy);
+ if(view.deep&&overviewView.deep){
+  const bits=Math.max(view.bits,overviewView.bits),oldSpan=fixedRescale(overviewView.dscale,overviewView.bits,bits),newSpan=fixedRescale(view.dscale,view.bits,bits);
+  relative=ratioBigInt(oldSpan,newSpan);
+  const odx=fixedRescale(overviewView.dcx,overviewView.bits,bits)-fixedRescale(view.dcx,view.bits,bits);
+  const ody=fixedRescale(overviewView.dcy,overviewView.bits,bits)-fixedRescale(view.dcy,view.bits,bits);
+  dx=Math.hypot(ratioBigInt(odx,newSpan),ratioBigInt(ody,newSpan))*view.scale;
+ }
+ return relative>1.35&&relative<7&&dx/Math.max(1e-300,view.scale)<.48;
+}
+function ensureOverviewWorker(){
+ if(overviewWorker||typeof Worker==='undefined')return !!overviewWorker;
+ try{
+  overviewWorker=new Worker('js/render-worker.js?v=468');
+  overviewWorker.onmessage=e=>{
+   const m=e.data;if(m.job!==overviewJob||m.progress!==undefined)return;
+   overviewBusy=false;
+   if(m.error){console.warn('Anteprima estesa:',m.error);return;}
+   try{
+    const frame=document.createElement('canvas');frame.width=m.width;frame.height=m.height;
+    frame.getContext('2d',{alpha:false}).putImageData(new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height),0,0);
+    overviewFrame=frame;overviewView=overviewPendingView;
+    if(previewActive&&!is3d)updatePreview();
+    // Queue at most one new map, using the latest gesture position.
+    if(overviewRefresh&&!is3d){overviewRefresh=false;setTimeout(()=>requestOverview(),130);}
+   }catch(err){console.warn('Anteprima estesa non disponibile:',err);}
+  };
+  overviewWorker.onerror=e=>{console.warn('Worker anteprima:',e.message);overviewBusy=false;overviewWorker?.terminate();overviewWorker=null;};
+  return true;
+ }catch(_){return false;}
+}
+function requestOverview(){
+ if(is3d||!ensureOverviewWorker())return;
+ const view=getViewState();if(overviewGood(view))return;
+ if(overviewBusy){overviewRefresh=true;return;}
+ overviewBusy=true;overviewRefresh=false;
+ // One low-resolution map (not a stretched bitmap), covering 2.8 screen spans.
+ const longSide=view.deep?135:205, factor=longSide/Math.max(1,view.stageW,view.stageH);
+ const width=Math.max(64,Math.round(view.stageW*factor)),height=Math.max(64,Math.round(view.stageH*factor));
+ const coarseScale=scale*OVERVIEW_SPAN,coarseDeep=deepEnabled?deepScale*28n/10n:0n;
+ const config={job:++overviewJob,preview:true,width,height,type:active.id,cx:centerX,cy:centerY,
+  scale:coarseScale,baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,
+  rotation,iterations:Math.min(iterations,deepEnabled?85:125),power,juliaReal,juliaImag,palette,
+  deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',
+  deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?coarseDeep.toString():'0'};
+ overviewPendingView={...view,scale:coarseScale,dscale:coarseDeep};
+ overviewWorker.postMessage(config);
+}
+
 let renderProgressTimer=0,renderHideTimer=0,renderStartedAt=0,renderEstimateMs=3500,renderHasWorkerProgress=false,renderToken=0;
 let fullscreenResizeTimer=0,fullscreenViewport=null,fullscreenPendingRender=false;
 const qFactor=()=>1n<<BigInt(deepBits);
@@ -46,7 +103,7 @@ function deepAllowed(){return ['mandelbrot','julia'].includes(active.id);}
 function setDeepMode(enabled){if(enabled&&!deepAllowed()){showToast('Precisione multipla disponibile per Mandelbrot e Julia');return;}if(enabled&&!deepEnabled){if(typeof BigInt!=='function'){showToast('Questo dispositivo non supporta BigInt');return;}deepInit();}else if(!enabled&&deepEnabled){updateDeepApprox();deepEnabled=false;}$('deepZoomBtn')?.classList.toggle('active',deepEnabled);$('deepZoomBtn')?.setAttribute('aria-pressed',String(deepEnabled));$('deepZoomBtn').innerHTML=deepEnabled?'∞ <span>DEEP ON</span>':'∞ <span>DEEP ZOOM</span>';updateHUD();scheduleDraw();}
 function setDeepPrecision(bits){bits=+bits;if(![128,256,512,1024].includes(bits))return;if(!deepEnabled){deepBits=bits;return;}deepCx=fixedRescale(deepCx,deepBits,bits);deepCy=fixedRescale(deepCy,deepBits,bits);deepScale=fixedRescale(deepScale,deepBits,bits);deepBits=bits;if(deepScale<minDeepSpan())deepScale=minDeepSpan();updateDeepApprox();scheduleDraw();updateHUD();}
 function deepZoomAt(f,x,y){const r=canvas2d.getBoundingClientRect(),px=(x??(r.left+r.width/2))-r.left,py=(y??(r.top+r.height/2))-r.top,s=Math.min(r.width,r.height);const ox=deepRatioQ(2*px-r.width,2*s),oy=deepRatioQ(2*py-r.height,2*s);const wx=deepCx+fixedMul(ox,deepScale),wy=deepCy+fixedMul(oy,deepScale);f=Math.max(.05,Math.min(20,Number(f)||1));deepScale=fixedMul(deepScale,numberToFixed(f));if(deepScale<minDeepSpan())deepScale=minDeepSpan();deepCx=wx-fixedMul(ox,deepScale);deepCy=wy-fixedMul(oy,deepScale);updateDeepApprox();scheduleDraw();updateHUD();}
-function initWorker(){try{worker=new Worker('js/render-worker.js?v=467');worker.onmessage=e=>{let m=e.data;if(m.job!==job)return;if(m.progress!==undefined){workerProgress(m.progress);return;}if(m.error){console.warn('Errore renderer:',m.error);showFallback2d();hideLoader();return;}const image=new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height);if(canvas2d.width!==m.width)canvas2d.width=m.width;if(canvas2d.height!==m.height)canvas2d.height=m.height;const ctx=canvas2d.getContext('2d',{alpha:false});ctx.putImageData(image,0,0);lastFrame=document.createElement('canvas');lastFrame.width=canvas2d.width;lastFrame.height=canvas2d.height;lastFrame.getContext('2d').drawImage(canvas2d,0,0);lastRenderView=activeRenderView||getViewState();clearPreview();finishLoader();updateStats();};worker.onerror=e=>{console.warn('Worker non disponibile',e);worker?.terminate();worker=null;showFallback2d();hideLoader();showToast('Anteprima semplificata: motore in riavvio');};}catch(e){console.warn('Impossibile avviare il worker',e);worker=null;showFallback2d();}}
+function initWorker(){try{worker=new Worker('js/render-worker.js?v=468');worker.onmessage=e=>{let m=e.data;if(m.job!==job)return;if(m.progress!==undefined){workerProgress(m.progress);return;}if(m.error){console.warn('Errore renderer:',m.error);showFallback2d();hideLoader();return;}const image=new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height);if(canvas2d.width!==m.width)canvas2d.width=m.width;if(canvas2d.height!==m.height)canvas2d.height=m.height;const ctx=canvas2d.getContext('2d',{alpha:false});ctx.putImageData(image,0,0);lastFrame=document.createElement('canvas');lastFrame.width=canvas2d.width;lastFrame.height=canvas2d.height;lastFrame.getContext('2d').drawImage(canvas2d,0,0);lastRenderView=activeRenderView||getViewState();clearPreview();finishLoader();updateStats();};worker.onerror=e=>{console.warn('Worker non disponibile',e);worker?.terminate();worker=null;showFallback2d();hideLoader();showToast('Anteprima semplificata: motore in riavvio');};}catch(e){console.warn('Impossibile avviare il worker',e);worker=null;showFallback2d();}}
 
 function showFallback2d(){
  if(is3d)return;
@@ -77,41 +134,57 @@ function draw2d(hd=false){if(is3d){draw3d(hd);return;}if(!worker)initWorker();if
  job++;activeRenderView=getViewState();const mp=w*h/1000000;const weight=deepEnabled?4.2:Math.max(.45,renderIterations/220);const estimate=Math.min(45000,Math.max(900,mp*weight*(active.mode==='3D'?300:1350)));
  const showProgress=fullscreenPendingRender||!artOnly||highQuality;fullscreenPendingRender=false;
  if(showProgress)showLoader(deepEnabled?'DEEP ZOOM · '+deepBits+' BIT':'RENDERING ARTWORK',estimate);else hideLoader();$('renderQualityHint').textContent=`${w} × ${h} · ${mp.toFixed(1)} MP · ${highQuality?'ALTA DEFINIZIONE':'ANTEPRIMA'}`;
+ requestOverview();
  const cfg={job,width:w,height:h,type:active.id,cx:centerX,cy:centerY,scale,baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,rotation,iterations:renderIterations,power,juliaReal,juliaImag,palette,deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?deepScale.toString():'0'};worker.postMessage(cfg);updateHUD();}
-function getViewState(){const r=stage.getBoundingClientRect();return {id:active.id,cx:centerX,cy:centerY,scale,rotation,deep:deepEnabled,bits:deepBits,dcx:deepCx,dcy:deepCy,dscale:deepScale,stageW:r.width,stageH:r.height};}
+function getViewState(){const r=stage.getBoundingClientRect();return {id:active.id,palette,params:[iterations,power,juliaReal,juliaImag].join(':'),cx:centerX,cy:centerY,scale,rotation,deep:deepEnabled,bits:deepBits,dcx:deepCx,dcy:deepCy,dscale:deepScale,stageW:r.width,stageH:r.height};}
 function clearPreview(){if(!previewCanvas)return;previewCanvas.width=1;previewCanvas.height=1;previewCanvas.hidden=true;previewActive=false;}
 function ratioBigInt(a,b){if(b===0n)return 1;const neg=(a<0n)!==(b<0n),aa=a<0n?-a:a,bb=b<0n?-b:b;if(bb===0n)return 1;const q=(aa<<40n)/bb;let v=Number(q)/Math.pow(2,40);if(!Number.isFinite(v))v=1e6;v=Math.min(1e6,v);return neg?-v:v;}
-function updatePreview(){
- if(!lastFrame||!lastRenderView||lastRenderView.id!==active.id||!previewCanvas||is3d)return;
- const rect=stage.getBoundingClientRect();if(rect.width<1||rect.height<1)return;
- const d=Math.min(window.devicePixelRatio||1,1.5),w=Math.max(1,Math.round(rect.width*d)),h=Math.max(1,Math.round(rect.height*d));
- if(previewCanvas.width!==w)previewCanvas.width=w;if(previewCanvas.height!==h)previewCanvas.height=h;
- const ctx=previewCanvas.getContext('2d');ctx.resetTransform?.();ctx.clearRect(0,0,w,h);ctx.fillStyle='#03050c';ctx.fillRect(0,0,w,h);
- const old=lastRenderView,oldW=old.stageW||rect.width,oldH=old.stageH||rect.height;
+// Transform a previously rendered world-coordinate map into the *new* camera.
+// The same affine reprojection is used for the detailed frame and the broad
+// overview; aspect ratios and current pinch rotation are preserved exactly.
+function paintReference(ctx,frame,from,rect,d,opacity=1){
+ if(!frame||!from||from.id!==active.id)return false;
+ const oldW=from.stageW||rect.width,oldH=from.stageH||rect.height;
  const oldMin=Math.min(oldW,oldH),newMin=Math.min(rect.width,rect.height);
- let oldScale=old.scale,newScale=scale,dx=0,dy=0;
- if(deepEnabled||old.deep){const bits=deepEnabled?deepBits:old.bits;
-  const os=old.deep?fixedRescale(old.dscale,old.bits,bits):numberToFixed(old.scale,bits);
-  const ns=deepEnabled?deepScale:numberToFixed(scale,bits);
-  oldScale=ratioBigInt(os,ns);newScale=1;
-  const ocx=old.deep?fixedRescale(old.dcx,old.bits,bits):numberToFixed(old.cx,bits);
-  const ocy=old.deep?fixedRescale(old.dcy,old.bits,bits):numberToFixed(old.cy,bits);
-  const ncx=deepEnabled?deepCx:numberToFixed(centerX,bits),ncy=deepEnabled?deepCy:numberToFixed(centerY,bits);
-  dx=ratioBigInt(ocx-ncx,ns)*newMin;
-  dy=ratioBigInt(ocy-ncy,ns)*newMin;
- }else{dx=(old.cx-centerX)*newMin/newScale;dy=(old.cy-centerY)*newMin/newScale;}
- // Translate center displacement into current screen axes; preview rotates with the fingers.
- const co=Math.cos(rotation),si=Math.sin(rotation);
- const screenDx=co*dx+si*dy,screenDy=-si*dx+co*dy;
- let ratio=(oldScale/newScale)*(newMin/oldMin);
- ratio=Math.max(0.00001,Math.min(100000,ratio));
- ctx.imageSmoothingEnabled=true;
- const destW=oldW*ratio,destH=oldH*ratio;
- ctx.save();ctx.translate((rect.width/2+screenDx)*d,(rect.height/2+screenDy)*d);
- ctx.rotate((old.rotation||0)-rotation);
- ctx.drawImage(lastFrame,-destW*d/2,-destH*d/2,destW*d,destH*d);ctx.restore();
+ let ratio=from.scale/scale,dx=0,dy=0;
+ if(deepEnabled||from.deep){
+  const bits=Math.max(deepBits,from.bits),os=from.deep?fixedRescale(from.dscale,from.bits,bits):numberToFixed(from.scale,bits);
+  const ns=deepEnabled?fixedRescale(deepScale,deepBits,bits):numberToFixed(scale,bits);
+  ratio=ratioBigInt(os,ns);
+  const ocx=from.deep?fixedRescale(from.dcx,from.bits,bits):numberToFixed(from.cx,bits);
+  const ocy=from.deep?fixedRescale(from.dcy,from.bits,bits):numberToFixed(from.cy,bits);
+  const ncx=deepEnabled?fixedRescale(deepCx,deepBits,bits):numberToFixed(centerX,bits);
+  const ncy=deepEnabled?fixedRescale(deepCy,deepBits,bits):numberToFixed(centerY,bits);
+  dx=ratioBigInt(ocx-ncx,ns)*newMin;dy=ratioBigInt(ocy-ncy,ns)*newMin;
+ }else{dx=(from.cx-centerX)*newMin/scale;dy=(from.cy-centerY)*newMin/scale;}
+ const co=Math.cos(rotation),si=Math.sin(rotation),screenDx=co*dx+si*dy,screenDy=-si*dx+co*dy;
+ ratio=Math.min(1e5,Math.max(1e-5,ratio*newMin/oldMin));
+ const dw=oldW*ratio,dh=oldH*ratio;
+ ctx.save();ctx.globalAlpha=opacity;
+ ctx.translate((rect.width/2+screenDx)*d,(rect.height/2+screenDy)*d);
+ ctx.rotate((from.rotation||0)-rotation);
+ ctx.drawImage(frame,-dw*d/2,-dh*d/2,dw*d,dh*d);
+ ctx.restore();return true;
+}
+function updatePreview(){
+ if(is3d||!previewCanvas)return;
+ const hasDetail=lastFrame&&lastRenderView&&lastRenderView.id===active.id;
+ const hasOverview=overviewFrame&&overviewView&&overviewView.id===active.id;
+ if(!hasDetail&&!hasOverview)return;
+ const rect=stage.getBoundingClientRect();if(rect.width<1||rect.height<1)return;
+ const d=Math.min(window.devicePixelRatio||1,1.35),w=Math.max(1,Math.round(rect.width*d)),h=Math.max(1,Math.round(rect.height*d));
+ if(previewCanvas.width!==w)previewCanvas.width=w;if(previewCanvas.height!==h)previewCanvas.height=h;
+ const ctx=previewCanvas.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,w,h);
+ // Until the real overview is ready, diffuse the last frame behind the sharp
+ // reprojected area. Unlike the old code this never paints black borders.
+ if(!hasOverview&&hasDetail){
+  ctx.save();ctx.filter='blur(12px) brightness(.60)';ctx.drawImage(lastFrame,0,0,w,h);ctx.restore();
+ }
+ if(hasOverview)paintReference(ctx,overviewFrame,overviewView,rect,d);
+ if(hasDetail)paintReference(ctx,lastFrame,lastRenderView,rect,d);
  previewCanvas.hidden=false;previewActive=true;
 }
+
 function ensureRenderer3d(){
  if(renderer3d)return !!renderer3d.ok;
  try{renderer3d=new FractInt3D(canvas3d);if(!renderer3d.ok)throw Error('WebGL2 assente');return true;}
@@ -122,7 +195,7 @@ function draw3d(highQuality=false){if(!ensureRenderer3d())return;const target=hi
 function scheduleDraw(hd=false){if(!is3d){job++;updatePreview();}clearTimeout(renderTimer);const highQuality=!!hd;renderTimer=setTimeout(()=>is3d?draw3d(highQuality):draw2d(highQuality),45);}
 function updateHUD(){const z=zoomDisplay();$('zoomLabel').textContent='ZOOM '+(is3d?renderer3d?.zoom.toFixed(2)+'×':z);$('coordLabel').textContent='x: '+(deepEnabled?centerX.toPrecision(7):centerX.toFixed(5))+' · y: '+(deepEnabled?centerY.toPrecision(7):centerY.toFixed(5));$('positionStat').textContent=centerX.toFixed(3)+' / '+centerY.toFixed(3);$('zoomStat').textContent=is3d?renderer3d?.zoom.toFixed(2)+'×':z;$('precisionLabel').textContent=is3d?'WEBGL2 GPU':deepEnabled?'BIGINT '+deepBits+' BIT':'CPU / WORKER';}
 function updateStats(){updateHUD();$('renderStat').textContent=is3d?'WebGL2 GPU':'Canvas CPU / Worker';}
-function selectFormula(id){const found=catalog.find(f=>f.id===id);if(!found)return;if(found.id!==active.id){lastFrame=null;lastRenderView=null;clearPreview();}if(deepEnabled&&!['mandelbrot','julia'].includes(id)){updateDeepApprox();deepEnabled=false;}active=found;rotation=0;centerX=found.center[0];centerY=found.center[1];scale=found.scale;if(deepEnabled)deepInit();iterations=found.iterations;power=found.power||2;$('iterations').value=iterations;$('iterationsValue').value=iterations;$('power').value=power;$('powerValue').value=power.toFixed(1);$('currentTitle').textContent=found.name;$('currentCategory').textContent=found.group.toUpperCase();$('deepZoomBtn').hidden=!['mandelbrot','julia'].includes(id);$('deepPrecisionBlock').hidden=!['mandelbrot','julia'].includes(id);$('deepZoomBtn').classList.toggle('active',deepEnabled);$('deepZoomBtn').innerHTML=deepEnabled?'∞ <span>DEEP ON</span>':'∞ <span>DEEP ZOOM</span>';$('juliaBlock').hidden=id!=='julia';$('powerBlock').hidden=!['multibrot','julia'].includes(id);$('power').disabled=false;$('power').value=power;$('powerValue').value=power.toFixed(1);setCanvasMode(found.mode==='3D');$('threePower').value=found.power||8;$('threePowerValue').value=$('threePower').value;$('threePower').disabled=id!=='mandelbulb';$('threeDetail').value=found.iterations;$('threeDetailValue').value=$('threeDetail').value;populatePresets();renderLibrary();scheduleDraw();updateHUD();}
+function selectFormula(id){const found=catalog.find(f=>f.id===id);if(!found)return;if(found.id!==active.id){lastFrame=null;lastRenderView=null;stopOverview();}if(deepEnabled&&!['mandelbrot','julia'].includes(id)){updateDeepApprox();deepEnabled=false;}active=found;rotation=0;centerX=found.center[0];centerY=found.center[1];scale=found.scale;if(deepEnabled)deepInit();iterations=found.iterations;power=found.power||2;$('iterations').value=iterations;$('iterationsValue').value=iterations;$('power').value=power;$('powerValue').value=power.toFixed(1);$('currentTitle').textContent=found.name;$('currentCategory').textContent=found.group.toUpperCase();$('deepZoomBtn').hidden=!['mandelbrot','julia'].includes(id);$('deepPrecisionBlock').hidden=!['mandelbrot','julia'].includes(id);$('deepZoomBtn').classList.toggle('active',deepEnabled);$('deepZoomBtn').innerHTML=deepEnabled?'∞ <span>DEEP ON</span>':'∞ <span>DEEP ZOOM</span>';$('juliaBlock').hidden=id!=='julia';$('powerBlock').hidden=!['multibrot','julia'].includes(id);$('power').disabled=false;$('power').value=power;$('powerValue').value=power.toFixed(1);setCanvasMode(found.mode==='3D');$('threePower').value=found.power||8;$('threePowerValue').value=$('threePower').value;$('threePower').disabled=id!=='mandelbulb';$('threeDetail').value=found.iterations;$('threeDetailValue').value=$('threeDetail').value;populatePresets();renderLibrary();scheduleDraw();updateHUD();}
 function renderLibrary(){let q=$('searchFormula').value.toLowerCase().trim(),items=catalog.filter(f=>(category==='all'||f.category===category)&&(!q||(f.name+' '+f.group+' '+f.description).toLowerCase().includes(q)));let html='',last='';for(let f of items){if(f.group!==last){html+=`<div class="list-group">${f.group}</div>`;last=f.group;}html+=`<button class="formula-item ${active.id===f.id?'active':''}" data-id="${f.id}"><span class="formula-glyph">${f.glyph}</span><span class="formula-meta"><span class="formula-name">${f.name}</span><span class="formula-type">${f.mode} · ${f.category==='complex'?'DYNAMICS':f.category==='geometry'?'GEOMETRY':f.category==='nature'?'NATURE':f.category==='attractors'?'CHAOS':f.category==='random'?'STOCHASTIC':'VOLUMETRIC'}</span></span>${favorites.has(f.id)?'<span class="item-star">★</span>':''}</button>`;} $('formulaList').innerHTML=html||'<div class="empty-state">Nessun frattale trovato</div>'; $('formulaCount').textContent=items.length+' FORMULE';}
 function populatePresets(){let presets=window.FRACTAL_PRESETS[active.id]||[];$('preset').innerHTML='<option value="">Scegli una composizione…</option>'+presets.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join('');}
 function applyPreset(index){let list=window.FRACTAL_PRESETS[active.id]||[],p=list[index];if(!p)return;rotation=0;centerX=p[1][0];centerY=p[1][1];scale=p[2];if(active.mode==='3D'){$('threePower').value=p[3];$('threePowerValue').value=p[3];renderer3d.power=p[3];}else{iterations=p[3];$('iterations').value=iterations;$('iterationsValue').value=iterations;}if(deepEnabled)deepInit();scheduleDraw();}
@@ -344,6 +417,6 @@ function initArtExplorer(){
  $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
 }
 
-function start(){setupPaletteChooser();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{if(viewportAnchor&&e?.isStateStable)triggerFullscreenResize();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=467',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
+function start(){setupPaletteChooser();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{if(viewportAnchor&&e?.isStateStable)triggerFullscreenResize();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=468',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
 try{start();}catch(e){console.error('Avvio Fractal Art Explorer:',e);const g=document.getElementById('artCards');if(g&&!g.children.length&&window.FRACTAL_ART_PRESETS){g.innerHTML=window.FRACTAL_ART_PRESETS.map(p=>`<button class="art-card" onclick="location.reload()"><span class="art-card-copy"><strong>${p.title}</strong><small>${p.subtitle}</small></span></button>`).join('');}const status=document.getElementById('engineStatus');if(status)status.textContent='AVVIO INCOMPLETO — RIAPRI LA MINI APP';}
 })();

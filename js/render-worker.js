@@ -10,6 +10,20 @@ for(const [key,info] of Object.entries(self.FRACTAL_PALETTES||{})){
  const stops=info.stops.map(toRGB);
  palettes[key]=t=>{const f=Math.max(0,Math.min(.999999,Number.isFinite(t)?t:0))*4,i=Math.floor(f),u=(f-i)*(f-i)*(3-2*(f-i)),a=stops[i],b=stops[i+1];return [a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u,a[2]+(b[2]-a[2])*u];};
 }
+// Gentle filmic grading and sub-LSB dithering: fewer visible colour bands,
+// cleaner midtones while preserving the dark interiors of the fractals.
+// Deterministic 4x4 ordered noise, no random flicker between renders.
+const GRADE_BAYER=[0,8,2,10,12,4,14,6,3,1,9,7,15,11,13,5];
+function gradePixels(p,w,h){
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+  const k=(y*w+x)*4,r=p[k],g=p[k+1],b=p[k+2],lum=.2126*r+.7152*g+.0722*b;
+  if(lum<12)continue;
+  const lift=Math.sin(Math.PI*lum/255)*2.2,noise=(GRADE_BAYER[(y&3)*4+(x&3)]-7.5)*.078;
+  p[k]=Math.max(0,Math.min(255,lum+(r-lum)*1.065+lift+noise));
+  p[k+1]=Math.max(0,Math.min(255,lum+(g-lum)*1.065+lift+noise));
+  p[k+2]=Math.max(0,Math.min(255,lum+(b-lum)*1.065+lift+noise));
+ }
+}
 function smooth(i,r){if(i===0)return 0;return i+1-Math.log2(Math.max(1e-12,Math.log2(Math.sqrt(r))));}
 function complexPower(x,y,p){const r=Math.hypot(x,y),a=Math.atan2(y,x);const rp=Math.pow(r,p);return [rp*Math.cos(a*p),rp*Math.sin(a*p)];}
 function iterate(kind,x,y,cfg){let zx=0,zy=0,cx=x,cy=y,prevx=0,prevy=0,iter=0,root=0;const max=cfg.iterations,p=cfg.power||2,cr=cfg.juliaReal,ci=cfg.juliaImag;
@@ -296,5 +310,6 @@ async function render(cfg){
   }
  }
  if(job!==newestJob)return;
+ gradePixels(data,w,h);
  self.postMessage({job,width:w,height:h,pixels:data.buffer},[data.buffer]);
 }
