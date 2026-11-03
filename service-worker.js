@@ -1,5 +1,5 @@
-// Fractal Art Explorer 4.6.11: always prefer current files, including JS/CSS.
-const CACHE='fae-v4-6-11-progressive-hd';
+// Fractal Art Explorer 4.6.12: always prefer current files, including JS/CSS.
+const CACHE='fae-v4-6-12-art-ui-ribbon';
 const CORE=['./','index.html','style.css','js/palettes.js','js/catalog.js','js/art-presets.js','js/render-worker.js','js/renderer3d.js','js/app.js','js/splash.js','assets/icon.svg'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));

@@ -2,6 +2,14 @@
 const $=id=>document.getElementById(id),catalog=window.FRACTAL_CATALOG;let active=catalog[0],category='all',job=0,worker=null,renderer3d=null,centerX=-.5,centerY=0,scale=3.2,rotation=0,iterations=220,power=2,palette='cosmic',juliaReal=-.8,juliaImag=.156,quality=.7,drag=null,pinch=null,renderTimer=0,is3d=false,collapsed=false,deepEnabled=false,deepBits=512,deepCx=0n,deepCy=0n,deepScale=0n,favorites=new Set((()=>{try{return JSON.parse(localStorage.getItem('fractint-favorites')||'[]')}catch(_){return []}})());
 const canvas2d=$('canvas2d'),canvas3d=$('canvas3d'),previewCanvas=$('previewCanvas'),stage=$('visualStage');
 let lastFrame=null,lastRenderView=null,activeRenderView=null,previewActive=false;
+let sessionThemeSeed=Math.random(),uiThemeBase=null;
+const INTERFACE_THEMES=[
+ {name:'opaline',panelA:'#14172a',panelB:'#0f2032',edge:'#3b5473',mist:'#d8f2ff',glow:'#8ddcff'},
+ {name:'amethyst',panelA:'#19152a',panelB:'#211537',edge:'#55407b',mist:'#f4dbff',glow:'#c67cff'},
+ {name:'ember',panelA:'#211520',panelB:'#30181e',edge:'#75475a',mist:'#ffe0c6',glow:'#ff9970'},
+ {name:'lagoon',panelA:'#101c27',panelB:'#102737',edge:'#2f6670',mist:'#d5fff4',glow:'#60dfc8'},
+ {name:'aurora',panelA:'#101827',panelB:'#171331',edge:'#355570',mist:'#e7f7ff',glow:'#7ec3ff'}
+];
 // Color cycling is a compositor-only filter over the existing image: never
 // cancels a render, modifies camera coordinates, or schedules a new worker job.
 // Web Animations preserves the hue phase when changing speed or pausing.
@@ -50,6 +58,52 @@ function setColorCycle(enable,reset=false){
  }
 }
 
+function clamp01(v){return Math.max(0,Math.min(1,v));}
+function hexToRgb(hex){const h=(hex||'#000000').replace('#','');return [0,2,4].map(i=>parseInt(h.slice(i,i+2)||'00',16));}
+function rgbToHex(rgb){return '#'+rgb.map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');}
+function mixHex(a,b,t){const ra=hexToRgb(a),rb=hexToRgb(b),u=clamp01(t);return rgbToHex(ra.map((v,i)=>v+(rb[i]-v)*u));}
+function alphaHex(hex,a){const [r,g,b]=hexToRgb(hex);return `rgba(${r},${g},${b},${clamp01(a)})`;}
+function paletteStopsFor(key){return (window.FRACTAL_PALETTES?.[key]?.stops||['#8a78ff','#43d7c5','#f5bd67']);}
+function refreshInterfaceTheme(){
+ if(!uiThemeBase)uiThemeBase=INTERFACE_THEMES[Math.floor(Math.random()*INTERFACE_THEMES.length)];
+ const stops=paletteStopsFor(palette),primary=stops[1]||stops[0]||'#8a78ff',secondary=stops[3]||stops[stops.length-1]||'#43d7c5';
+ const tertiary=stops[2]||mixHex(primary,secondary,.5);
+ const root=document.documentElement.style;
+ root.setProperty('--ui-accent',primary);
+ root.setProperty('--ui-accent-2',secondary);
+ root.setProperty('--ui-accent-3',tertiary);
+ root.setProperty('--ui-panel-a',mixHex(uiThemeBase.panelA,primary,.18));
+ root.setProperty('--ui-panel-b',mixHex(uiThemeBase.panelB,secondary,.14));
+ root.setProperty('--ui-edge',mixHex(uiThemeBase.edge,primary,.32));
+ root.setProperty('--ui-mist',mixHex(uiThemeBase.mist,secondary,.18));
+ root.setProperty('--ui-glow',mixHex(uiThemeBase.glow,primary,.28));
+ root.setProperty('--ui-glass',alphaHex(mixHex(uiThemeBase.panelA,primary,.12),.72));
+ root.setProperty('--ui-glass-soft',alphaHex(mixHex(uiThemeBase.panelB,secondary,.10),.58));
+ root.setProperty('--ui-track',`linear-gradient(90deg, ${primary}, ${tertiary}, ${secondary})`);
+ root.setProperty('--ui-bar-shadow',alphaHex(mixHex(primary,secondary,.45),.55));
+ stage?.style?.setProperty('--render-sheen',`radial-gradient(circle at ${35+Math.round(sessionThemeSeed*40)}% 50%, ${alphaHex(primary,.16)} 0%, transparent 58%)`);
+ const tg=window.Telegram?.WebApp;
+ tg?.setHeaderColor?.(mixHex('#0b1020',primary,.15));
+ tg?.setBackgroundColor?.(mixHex('#080b16',secondary,.10));
+}
+function primeProgressivePreview(){
+ if(previewCanvas){previewCanvas.style.opacity='1';previewCanvas.style.transition='opacity .16s linear';}
+}
+function paintRenderChunk(m){
+ if(!m||m.job!==job||is3d)return;
+ try{
+  const pixels=new Uint8ClampedArray(m.pixels),image=new ImageData(pixels,m.width,m.height);
+  if(canvas2d.width!==m.width)canvas2d.width=m.width;
+  if(canvas2d.height!==m.fullHeight)canvas2d.height=m.fullHeight;
+  const ctx=canvas2d.getContext('2d',{alpha:false});
+  stage.classList.remove('reprojecting');
+  ctx.putImageData(image,0,m.y);
+  const p=Math.max(0,Math.min(100,Math.round(m.progress??((m.y+m.height)/Math.max(1,m.fullHeight))*100)));
+  if(previewActive&&previewCanvas){previewCanvas.style.opacity=String(Math.max(.05,1-p/100));if(p>96)previewCanvas.style.opacity='0.04';}
+  if(!activeRenderAutomatic)workerProgress(p);
+ }catch(err){console.warn('Chunk render fallito:',err);}
+}
+
 // A separate, lightweight copy of the real renderer builds a wider low-resolution
 // map around the visible frame. It keeps unexplored edges filled during gestures.
 let overviewWorker=null,overviewFrame=null,overviewView=null,overviewPendingView=null,overviewJob=0,overviewBusy=false,overviewRefresh=false;
@@ -75,7 +129,7 @@ function overviewGood(view){
 function ensureOverviewWorker(){
  if(overviewWorker||typeof Worker==='undefined')return !!overviewWorker;
  try{
-  overviewWorker=new Worker('js/render-worker.js?v=4611');
+  overviewWorker=new Worker('js/render-worker.js?v=4612');
   overviewWorker.onmessage=e=>{
    const m=e.data;if(m.job!==overviewJob||m.progress!==undefined)return;
    overviewBusy=false;
@@ -161,14 +215,14 @@ function setRenderProgress(value){const pct=Math.max(0,Math.min(100,Math.round(v
 function showLoader(msg='CALCOLO IN CORSO',estimateMs=3500){
  clearInterval(renderProgressTimer);clearTimeout(renderHideTimer);renderToken++;
  renderStartedAt=performance.now();renderEstimateMs=Math.max(650,Math.min(45000,estimateMs||3500));renderHasWorkerProgress=false;
- $('renderMessage').textContent=msg;$('renderQualityHint').textContent='OTTIMIZZAZIONE DEL DETTAGLIO';setRenderProgress(1);
+ $('renderMessage').textContent=msg;$('renderQualityHint').textContent='LIVELLI E SFUMATURE IN ARRIVO';setRenderProgress(1);primeProgressivePreview();
  $('renderOverlay').classList.add('show');$('engineStatus').innerHTML='<i style="background:#efbd67"></i> RENDERING';
  const token=renderToken;
  renderProgressTimer=setInterval(()=>{if(token!==renderToken||renderHasWorkerProgress)return;const elapsed=performance.now()-renderStartedAt;const estimated=4+90*(1-Math.exp(-elapsed/renderEstimateMs));setRenderProgress(Math.min(94,estimated));},120);
 }
 function workerProgress(value){renderHasWorkerProgress=true;setRenderProgress(value);}
 function finishLoader(){clearInterval(renderProgressTimer);renderHasWorkerProgress=true;setRenderProgress(100);const token=renderToken;clearTimeout(renderHideTimer);renderHideTimer=setTimeout(()=>{if(token===renderToken){hideLoader();}},420);}
-function hideLoader(){clearInterval(renderProgressTimer);clearTimeout(renderHideTimer);$('renderOverlay').classList.remove('show');$('engineStatus').innerHTML='<i></i> ENGINE READY';}
+function hideLoader(){clearInterval(renderProgressTimer);clearTimeout(renderHideTimer);$('renderOverlay').classList.remove('show');$('engineStatus').innerHTML='<i></i> ENGINE READY';if(previewCanvas)previewCanvas.style.opacity='1';}
 function numberToFixed(n,bits=deepBits){const q=1n<<BigInt(bits),den=1000000000000000n,num=BigInt(Math.round(n*1e15));return num*q/den;}
 function fixedToNumber(v,bits=deepBits){if(v===0n)return 0;const shift=Math.max(0,bits-44),sv=v>>BigInt(shift);return Number(sv)/Math.pow(2,bits-shift);}
 function fixedMul(a,b){return(a*b)>>BigInt(deepBits);}
@@ -185,14 +239,14 @@ function setDeepPrecision(bits){bits=+bits;if(![128,256,512,1024].includes(bits)
 function deepZoomAt(f,x,y){const r=canvas2d.getBoundingClientRect(),px=(x??(r.left+r.width/2))-r.left,py=(y??(r.top+r.height/2))-r.top,s=Math.min(r.width,r.height);const ox=deepRatioQ(2*px-r.width,2*s),oy=deepRatioQ(2*py-r.height,2*s);const wx=deepCx+fixedMul(ox,deepScale),wy=deepCy+fixedMul(oy,deepScale);f=Math.max(.05,Math.min(20,Number(f)||1));deepScale=fixedMul(deepScale,numberToFixed(f));if(deepScale<minDeepSpan())deepScale=minDeepSpan();deepCx=wx-fixedMul(ox,deepScale);deepCy=wy-fixedMul(oy,deepScale);updateDeepApprox();scheduleDraw();updateHUD();}
 function initWorker(){
  try{
-  worker=new Worker('js/render-worker.js?v=4611');
+  worker=new Worker('js/render-worker.js?v=4612');
   worker.onmessage=e=>{
    const m=e.data;if(m.job!==job)return;
+   if(m.chunk){paintRenderChunk(m);return;}
    if(m.progress!==undefined){if(!activeRenderAutomatic)workerProgress(m.progress);return;}
    if(m.error){console.warn('Errore renderer:',m.error);if(!lastFrame)showFallback2d();hideLoader();return;}
    try{
     const image=new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height);
-    // Preserve the previous bitmap until a complete replacement is ready.
     if(canvas2d.width!==m.width)canvas2d.width=m.width;
     if(canvas2d.height!==m.height)canvas2d.height=m.height;
     const ctx=canvas2d.getContext('2d',{alpha:false});ctx.putImageData(image,0,0);
@@ -253,9 +307,9 @@ function draw2d(hd=false,automatic=false){
  const estimate=Math.min(45000,Math.max(900,mp*weight*1350));
  const showProgress=!automatic&&(fullscreenPendingRender||!artOnly||highQuality);
  fullscreenPendingRender=false;
- if(showProgress)showLoader(deepEnabled?'DEEP ZOOM · '+deepBits+' BIT':'RENDERING ARTWORK',estimate);
+ if(showProgress)showLoader(deepEnabled?'INFINITE DETAIL · '+deepBits+' BIT':'LIVING CANVAS',estimate);
  else hideLoader();
- $('renderQualityHint').textContent=`${w} × ${h} · ${mp.toFixed(1)} MP · ${highQuality?'ALTA DEFINIZIONE':'ANTEPRIMA'}`;
+ $('renderQualityHint').textContent=`${w} × ${h} · ${mp.toFixed(1)} MP · ${highQuality?(automatic?'RIFINITURA PROGRESSIVA':'ALTA DEFINIZIONE'):'STRATI PROGRESSIVI'}`;
  if(!highQuality)requestOverview();
  const cfg={job,width:w,height:h,type:active.id,cx:centerX,cy:centerY,scale,
   baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,
@@ -269,7 +323,7 @@ function getViewState(){const r=stage.getBoundingClientRect();return {id:active.
 function clearPreview(){
  if(!previewCanvas)return;
  stage.classList.remove('reprojecting');
- previewCanvas.width=1;previewCanvas.height=1;previewCanvas.hidden=true;previewActive=false;
+ previewCanvas.width=1;previewCanvas.height=1;previewCanvas.hidden=true;previewCanvas.style.opacity='1';previewActive=false;
 }
 function ratioBigInt(a,b){if(b===0n)return 1;const neg=(a<0n)!==(b<0n),aa=a<0n?-a:a,bb=b<0n?-b:b;if(bb===0n)return 1;const q=(aa<<40n)/bb;let v=Number(q)/Math.pow(2,40);if(!Number.isFinite(v))v=1e6;v=Math.min(1e6,v);return neg?-v:v;}
 // Transform a previously rendered world-coordinate map into the *new* camera.
@@ -323,7 +377,7 @@ function updatePreview(){
  }
  if(hasOverview)paintReference(ctx,overviewFrame,overviewView,rect,d);
  if(hasDetail)paintReference(ctx,lastFrame,lastRenderView,rect,d);
- previewCanvas.hidden=false;previewActive=true;
+ previewCanvas.hidden=false;previewCanvas.style.opacity='1';previewActive=true;
  // Hide the old canvas while the viewport dimensions differ from the last
  // finished render. Otherwise CSS stretches its obsolete bitmap for a frame.
  stage.classList.add('reprojecting');
@@ -509,7 +563,7 @@ function setupInteractions(){
  $('formulaList').addEventListener('click',e=>{let b=e.target.closest('[data-id]');if(b){selectFormula(b.dataset.id);$('library').classList.remove('open');}});
  $('categoryTabs').addEventListener('click',e=>{let b=e.target.closest('[data-category]');if(!b)return;category=b.dataset.category;document.querySelectorAll('.cat-tab').forEach(x=>x.classList.toggle('active',x===b));renderLibrary();});$('searchFormula').addEventListener('input',renderLibrary);
  bindRange('iterations',v=>{iterations=v;$('iterationsValue').value=v;scheduleDraw();});bindRange('power',v=>{power=v;$('powerValue').value=v.toFixed(1);scheduleDraw();});bindRange('juliaReal',v=>{juliaReal=v;$('juliaRealValue').value=v.toFixed(2);scheduleDraw();});bindRange('juliaImag',v=>{juliaImag=v;$('juliaImagValue').value=v.toFixed(3);scheduleDraw();});bindRange('quality',v=>{quality=v/100;$('qualityValue').value=v+'%';scheduleDraw();});bindRange('threePower',v=>{$('threePowerValue').value=v;if(renderer3d)renderer3d.power=v;scheduleDraw();});bindRange('threeDetail',v=>{$('threeDetailValue').value=v;if(renderer3d)renderer3d.detail=v;scheduleDraw();});
- $('palette').onchange=e=>{palette=e.target.value;syncPaletteButtons();scheduleDraw();};$('paletteCycle').onclick=()=>{let list=[...$('palette').options].map(o=>o.value),i=list.indexOf(palette);palette=list[(i+1)%list.length];$('palette').value=palette;syncPaletteButtons();scheduleDraw();};$('preset').onchange=e=>applyPreset(+e.target.value);
+ $('palette').onchange=e=>{palette=e.target.value;syncPaletteButtons();refreshInterfaceTheme();scheduleDraw();};$('paletteCycle').onclick=()=>{let list=[...$('palette').options].map(o=>o.value),i=list.indexOf(palette);palette=list[(i+1)%list.length];$('palette').value=palette;syncPaletteButtons();refreshInterfaceTheme();scheduleDraw();};$('preset').onchange=e=>applyPreset(+e.target.value);
  $('resetBtn').onclick=resetView;$('zoomIn').onclick=()=>zoom(.7);$('zoomOut').onclick=()=>zoom(1.4);$('deepZoomBtn').onclick=()=>setDeepMode(!deepEnabled);$('deepPrecision').onchange=e=>setDeepPrecision(+e.target.value);$('randomBtn').onclick=randomFractal;$('favoriteBtn').onclick=toggleFavorite;$('formulaInfoBtn').onclick=showFormulaInfo;$('highQualityBtn').onclick=()=>{cancelRefinement();clearTimeout(renderTimer);is3d?draw3d(true,false):draw2d(true,false);};$('randomJulia').onclick=()=>{juliaReal=+(Math.random()*1.2-.6).toFixed(3);juliaImag=+(Math.random()*1.2-.6).toFixed(3);$('juliaReal').value=juliaReal;$('juliaImag').value=juliaImag;$('juliaRealValue').value=juliaReal.toFixed(2);$('juliaImagValue').value=juliaImag.toFixed(3);selectFormula('julia');};
  $('fullscreenBtn').onclick=()=>toggleArtOnly();
  $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa. Il pulsante ↻ CICLA anima le tinte; scegli ½×–4× per la velocità e ripremilo per fermarle.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
@@ -558,7 +612,7 @@ function setupPaletteChooser(){
  select.replaceChildren(...entries.map(([key,v])=>new Option(v.name,key)));
  strip.innerHTML=entries.map(([key,v])=>`<button class="palette-chip" type="button" data-palette="${key}" aria-label="Colori ${v.name}"><i class="swatch" style="background:linear-gradient(105deg,${v.stops.join(',')})"></i><span>${v.name}</span></button>`).join('');
  $('paletteCycle').title='Palette successiva';
- $('colorSurpriseBtn').onclick=()=>{const values=entries.map(e=>e[0]).filter(key=>key!==palette);palette=values[Math.floor(Math.random()*values.length)];select.value=palette;syncPaletteButtons();scheduleDraw();};
+ $('colorSurpriseBtn').onclick=()=>{const values=entries.map(e=>e[0]).filter(key=>key!==palette);palette=values[Math.floor(Math.random()*values.length)];select.value=palette;syncPaletteButtons();refreshInterfaceTheme();scheduleDraw();};
 }
 function syncPaletteButtons(){document.querySelectorAll('.palette-chip').forEach(b=>b.classList.toggle('active',b.dataset.palette===palette));}
 let activeArtId='violet-reverie',artFilter='all';
@@ -586,6 +640,7 @@ function applyArtPreset(id){
  document.body.dataset.artMood=p.mood;
  renderArtCards();
  syncPaletteButtons();
+ refreshInterfaceTheme();
  $('deepZoomBtn').classList.remove('active');$('deepZoomBtn').setAttribute('aria-pressed','false');
  scheduleDraw();updateHUD();
 }
@@ -593,7 +648,7 @@ function initArtExplorer(){
  renderArtCards();
  $('artFilters').addEventListener('click',e=>{const b=e.target.closest('[data-art-filter]');if(!b)return;artFilter=b.dataset.artFilter;document.querySelectorAll('.art-filter').forEach(x=>x.classList.toggle('active',x===b));renderArtCards();});
  $('artCards').addEventListener('click',e=>{const b=e.target.closest('[data-art-id]');if(b)applyArtPreset(b.dataset.artId);});
- document.querySelectorAll('.palette-chip').forEach(b=>b.addEventListener('click',()=>{palette=b.dataset.palette;$('palette').value=palette;document.querySelectorAll('.palette-chip').forEach(x=>x.classList.toggle('active',x===b));scheduleDraw();}));
+ document.querySelectorAll('.palette-chip').forEach(b=>b.addEventListener('click',()=>{palette=b.dataset.palette;$('palette').value=palette;document.querySelectorAll('.palette-chip').forEach(x=>x.classList.toggle('active',x===b));refreshInterfaceTheme();scheduleDraw();}));
  $('formulaList').addEventListener('click',e=>{const b=e.target.closest('[data-id]');if(!b)return;const p=(window.FRACTAL_ART_PRESETS||[]).find(x=>x.fractal===b.dataset.id);if(p)setTimeout(()=>applyArtPreset(p.id),0);});
  $('randomBtn').onclick=()=>{const list=(window.FRACTAL_ART_PRESETS||[]).filter(p=>p.id!==activeArtId);applyArtPreset(list[Math.floor(Math.random()*list.length)].id);};
  $('resetBtn').onclick=()=>applyArtPreset(activeArtId||'violet-reverie');
@@ -602,6 +657,6 @@ function initArtExplorer(){
  $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa. Il pulsante ↻ CICLA anima le tinte; scegli ½×–4× per la velocità e ripremilo per fermarle.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
 }
 
-function start(){stageGeometryRef=screenGeometry();if(typeof ResizeObserver!=='undefined')new ResizeObserver(scheduleGeometrySync).observe(stage);setupPaletteChooser();initColorCycle();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{scheduleGeometrySync();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=4611',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
+function start(){stageGeometryRef=screenGeometry();uiThemeBase=INTERFACE_THEMES[Math.floor(Math.random()*INTERFACE_THEMES.length)];refreshInterfaceTheme();if(typeof ResizeObserver!=='undefined')new ResizeObserver(scheduleGeometrySync).observe(stage);setupPaletteChooser();initColorCycle();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{scheduleGeometrySync();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=4612',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
 try{start();}catch(e){console.error('Avvio Fractal Art Explorer:',e);const g=document.getElementById('artCards');if(g&&!g.children.length&&window.FRACTAL_ART_PRESETS){g.innerHTML=window.FRACTAL_ART_PRESETS.map(p=>`<button class="art-card" onclick="location.reload()"><span class="art-card-copy"><strong>${p.title}</strong><small>${p.subtitle}</small></span></button>`).join('');}const status=document.getElementById('engineStatus');if(status)status.textContent='AVVIO INCOMPLETO — RIAPRI LA MINI APP';}
 })();

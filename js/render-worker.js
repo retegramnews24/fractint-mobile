@@ -1,6 +1,10 @@
 /* FractInt CPU renderer. All heavy 2D calculations run off the UI thread. */
 importScripts('palettes.js');
 let newestJob=0;
+function emitChunk(job,data,w,y0,y1,totalH){
+ const start=y0*w*4,end=y1*w*4;
+ try{const chunk=data.slice(start,end);self.postMessage({job,chunk:true,width:w,height:y1-y0,fullHeight:totalH,y:y0,progress:Math.round(y1/Math.max(1,totalH)*100),pixels:chunk.buffer},[chunk.buffer]);}catch(_){/* ignore chunk paint */}
+}
 self.onmessage=(event)=>{const cfg=event.data;newestJob=cfg.job;render(cfg).catch(err=>self.postMessage({job:cfg.job,error:String(err)}));};
 const palettes={cosmic:t=>[16+220*t,18+105*Math.sin(t*5.5)**2,45+205*(1-t)],fire:t=>[255*Math.min(1,t*2.2),215*Math.max(0,t-.25),35+65*(1-t)],ocean:t=>[10+20*t,35+190*t,70+185*t],aurora:t=>[35+175*Math.sin(t*3.3)**2,25+205*t,100+145*(1-t)],mono:t=>[255*t,255*t,255*t],candy:t=>[150+100*Math.sin(t*8),75+150*Math.sin(t*5+1),190+65*Math.cos(t*7)],gold:t=>[80+175*t,45+170*t,12+75*t],neon:t=>[40+210*t,220*(1-t),100+150*Math.sin(t*6)**2]};
 // Nuove palette a gradienti cromatici a cinque stop, campionati a precisione piena.
@@ -241,6 +245,7 @@ async function renderDeep(cfg,w,h){
     data[k]=col[0];data[k+1]=col[1];data[k+2]=col[2];data[k+3]=255;
    }
   }
+  emitChunk(cfg.job,data,w,y0,ymax,h);
   self.postMessage({job:cfg.job,progress:Math.round(ymax/h*100)});
   await new Promise(resolve=>setTimeout(resolve,0));
  }
@@ -305,6 +310,7 @@ async function render(cfg){
      data[k+3]=255;
     }
    }
+   emitChunk(job,data,w,y0,ymax,h);
    self.postMessage({job,progress:Math.round(ymax/h*100)});
    await new Promise(resolve=>setTimeout(resolve,0));
   }

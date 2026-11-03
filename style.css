@@ -161,3 +161,45 @@ body.art-only #canvas2d.hidden,body.art-only #canvas3d.hidden{display:none!impor
 /* Keep the pre-existing surprise-color action contained on narrow screens. */
 .bottom-actions .color-shuffle{font-size:0;display:grid;place-items:center;overflow:hidden;white-space:nowrap;flex:none}
 .bottom-actions .color-shuffle::before{content:'✦';font-size:17px;line-height:1}
+
+
+/* v4.6.12 — artistic interface chroma + bottom progress ribbon */
+:root{--ui-accent:#8a78ff;--ui-accent-2:#43d7c5;--ui-accent-3:#f5bd67;--ui-panel-a:#14172a;--ui-panel-b:#102132;--ui-edge:#37506d;--ui-mist:#eef6ff;--ui-glow:#8ddcff;--ui-glass:rgba(18,22,40,.72);--ui-glass-soft:rgba(16,24,38,.58);--ui-track:linear-gradient(90deg,#8a78ff,#f5bd67,#43d7c5);--ui-bar-shadow:rgba(138,120,255,.55)}
+html,body{background:
+ radial-gradient(circle at 8% 8%, color-mix(in srgb, var(--ui-accent) 18%, transparent), transparent 26%),
+ radial-gradient(circle at 92% 18%, color-mix(in srgb, var(--ui-accent-2) 15%, transparent), transparent 26%),
+ linear-gradient(180deg,#05070f 0%, #080b16 40%, #070912 100%);
+}
+.app-shell{background:linear-gradient(180deg, color-mix(in srgb, var(--ui-panel-a) 82%, #060911), color-mix(in srgb, var(--ui-panel-b) 82%, #070b14));}
+.topbar,.library,.control-panel,.stage-toolbar,.bottom-toolbar{position:relative;overflow:hidden}
+.topbar::before,.library::before,.control-panel::before,.stage-toolbar::before,.bottom-toolbar::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,color-mix(in srgb, var(--ui-accent) 10%, transparent),transparent 42%,color-mix(in srgb, var(--ui-accent-2) 10%, transparent));pointer-events:none;opacity:.95}
+.topbar{background:linear-gradient(180deg,color-mix(in srgb, var(--ui-panel-a) 92%, #090d18),color-mix(in srgb, var(--ui-panel-b) 72%, #0a1120));border-bottom-color:color-mix(in srgb, var(--ui-edge) 72%, #233048)}
+.brand-mark{border-color:color-mix(in srgb, var(--ui-accent) 50%, #ffffff12);color:color-mix(in srgb, var(--ui-mist) 75%, var(--ui-accent));background:linear-gradient(145deg,color-mix(in srgb, var(--ui-panel-a) 70%, var(--ui-accent) 20%),color-mix(in srgb, var(--ui-panel-b) 82%, black));box-shadow:0 0 24px color-mix(in srgb,var(--ui-accent) 28%, transparent)}
+.brand-name span,.current-kicker,.modal .modal-kicker,.color-shuffle,.deep-tool.active{color:color-mix(in srgb, var(--ui-mist) 68%, var(--ui-accent))}
+.icon-btn,.tool-btn,.mini-btn,.palette-chip,.action-btn.secondary,.search-wrap,.palette-row select,.preset-block select,.color-cycle-button,.color-cycle-speed{border-color:color-mix(in srgb, var(--ui-edge) 85%, #2d3957);background:color-mix(in srgb, var(--ui-glass) 90%, #10162a);backdrop-filter:blur(12px)}
+.formula-item.active,.cat-tab.active,.palette-chip.active,.color-cycle-button.playing,.tool-btn.primary{background:linear-gradient(120deg,color-mix(in srgb,var(--ui-accent) 24%, #1a2340),color-mix(in srgb,var(--ui-accent-2) 18%, #161f34));border-color:color-mix(in srgb, var(--ui-accent) 48%, var(--ui-accent-2));box-shadow:0 0 0 1px color-mix(in srgb,var(--ui-accent) 18%, transparent) inset,0 12px 30px color-mix(in srgb,var(--ui-accent) 10%, transparent)}
+.visual-stage{background:
+ radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--ui-accent) 15%, transparent), transparent 28%),
+ radial-gradient(circle at 78% 18%, color-mix(in srgb, var(--ui-accent-2) 13%, transparent), transparent 32%),
+ linear-gradient(180deg,#04060d,#03050c 62%,#05070d)}
+.stage-hud{background:color-mix(in srgb, var(--ui-glass-soft) 92%, #050812);border-color:color-mix(in srgb, var(--ui-edge) 80%, #263149);backdrop-filter:blur(14px)}
+.live-dot,.engine-status i{background:var(--ui-accent-2);box-shadow:0 0 10px color-mix(in srgb,var(--ui-accent-2) 70%, transparent)}
+.render-overlay{position:absolute;left:0;right:0;bottom:0;top:auto;display:flex;align-items:flex-end;justify-content:center;padding:0 14px calc(env(safe-area-inset-bottom,0px) + 10px);z-index:20;opacity:0;pointer-events:none;transition:opacity .18s ease;background:transparent}
+.render-overlay::before{content:'';position:absolute;left:0;right:0;bottom:0;height:84px;background:linear-gradient(180deg,transparent 0%,rgba(4,6,12,.12) 18%,rgba(4,6,12,.62) 100%);pointer-events:none;opacity:.9}
+.render-overlay.show{opacity:1}
+.render-progress-card{position:relative;width:min(980px,calc(100vw - 24px));padding:0 2px 0;border:0;border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none}
+.render-progress-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin:0 0 6px;color:color-mix(in srgb, var(--ui-mist) 78%, #d1d8ef);font:10px var(--mono);letter-spacing:.14em;text-shadow:0 1px 8px rgba(0,0,0,.45)}
+.render-progress-head strong{font:700 14px var(--mono);color:#fff;font-variant-numeric:tabular-nums;letter-spacing:.03em}
+.render-progress-track{position:relative;height:5px;border-radius:999px;background:rgba(255,255,255,.16);overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.render-progress-track::after{content:'';position:absolute;inset:0;background:var(--render-sheen, transparent);pointer-events:none}
+.render-progress-track i{display:block;width:1%;height:100%;border-radius:999px;background:var(--ui-track);box-shadow:0 0 18px var(--ui-bar-shadow);transition:width .08s linear}
+.render-progress-card small{display:block;margin-top:6px;color:color-mix(in srgb,var(--ui-mist) 54%, #9aa5c0);font:8px var(--mono);letter-spacing:.14em;text-shadow:0 1px 6px rgba(0,0,0,.45)}
+body.art-only .render-overlay{display:flex!important;opacity:0;padding:0 16px calc(env(safe-area-inset-bottom,0px) + 14px)}
+body.art-only .render-overlay.show{opacity:1!important}
+body.art-only .render-progress-card{width:min(1120px,calc(100vw - 30px))}
+body.art-only .render-progress-head span,body.art-only .render-progress-card small{display:block}
+body.art-only .render-progress-head{margin:0 0 5px}
+body.art-only .render-progress-head strong{font:600 12px var(--mono);letter-spacing:.04em}
+body.art-only .render-progress-track{height:4px}
+@media(max-width:760px){.render-progress-card{width:min(960px,calc(100vw - 18px))}.render-progress-head{font-size:9px}.render-progress-head strong{font-size:12px}.render-progress-card small{font-size:7px;letter-spacing:.11em}}
+#previewCanvas{transition:opacity .16s linear}
