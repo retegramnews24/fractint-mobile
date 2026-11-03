@@ -5,7 +5,11 @@ let lastFrame=null,lastRenderView=null,activeRenderView=null,previewActive=false
 // A separate, lightweight copy of the real renderer builds a wider low-resolution
 // map around the visible frame. It keeps unexplored edges filled during gestures.
 let overviewWorker=null,overviewFrame=null,overviewView=null,overviewPendingView=null,overviewJob=0,overviewBusy=false,overviewRefresh=false;
-const OVERVIEW_SPAN=2.8;
+// Two and a half visible spans per axis, with adaptive overscan resolution.
+// Greater detail than v4.6.8 (typically 420-560px vs 205px), without
+// increasing resolution on devices that report limited RAM or CPU cores.
+const OVERVIEW_SPAN=2.55;
+let stageGeometryRef=null,stageResizeRAF=0;
 function stopOverview(){overviewJob++;overviewBusy=false;overviewRefresh=false;overviewFrame=null;overviewView=null;overviewPendingView=null;clearPreview();}
 function overviewGood(view){
  if(!overviewFrame||!overviewView||overviewView.id!==view.id||overviewView.palette!==view.palette||overviewView.params!==view.params||overviewView.deep!==view.deep)return false;
@@ -23,7 +27,7 @@ function overviewGood(view){
 function ensureOverviewWorker(){
  if(overviewWorker||typeof Worker==='undefined')return !!overviewWorker;
  try{
-  overviewWorker=new Worker('js/render-worker.js?v=468');
+  overviewWorker=new Worker('js/render-worker.js?v=469');
   overviewWorker.onmessage=e=>{
    const m=e.data;if(m.job!==overviewJob||m.progress!==undefined)return;
    overviewBusy=false;
@@ -32,7 +36,7 @@ function ensureOverviewWorker(){
     const frame=document.createElement('canvas');frame.width=m.width;frame.height=m.height;
     frame.getContext('2d',{alpha:false}).putImageData(new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height),0,0);
     overviewFrame=frame;overviewView=overviewPendingView;
-    if(previewActive&&!is3d)updatePreview();
+    if(!is3d&&previewActive)updatePreview();
     // Queue at most one new map, using the latest gesture position.
     if(overviewRefresh&&!is3d){overviewRefresh=false;setTimeout(()=>requestOverview(),130);}
    }catch(err){console.warn('Anteprima estesa non disponibile:',err);}
@@ -47,12 +51,14 @@ function requestOverview(){
  if(overviewBusy){overviewRefresh=true;return;}
  overviewBusy=true;overviewRefresh=false;
  // One low-resolution map (not a stretched bitmap), covering 2.8 screen spans.
- const longSide=view.deep?135:205, factor=longSide/Math.max(1,view.stageW,view.stageH);
- const width=Math.max(64,Math.round(view.stageW*factor)),height=Math.max(64,Math.round(view.stageH*factor));
- const coarseScale=scale*OVERVIEW_SPAN,coarseDeep=deepEnabled?deepScale*28n/10n:0n;
+ const lowSpec=(navigator.deviceMemory>0&&navigator.deviceMemory<=4)||(navigator.hardwareConcurrency>0&&navigator.hardwareConcurrency<=4);
+ const longSide=view.deep?(lowSpec?230:315):(lowSpec?390:540);
+ const factor=longSide/Math.max(1,view.stageW,view.stageH);
+ const width=Math.max(72,Math.round(view.stageW*factor)),height=Math.max(72,Math.round(view.stageH*factor));
+ const coarseScale=scale*OVERVIEW_SPAN,coarseDeep=deepEnabled?deepScale*255n/100n:0n;
  const config={job:++overviewJob,preview:true,width,height,type:active.id,cx:centerX,cy:centerY,
   scale:coarseScale,baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,
-  rotation,iterations:Math.min(iterations,deepEnabled?85:125),power,juliaReal,juliaImag,palette,
+  rotation,iterations:Math.min(iterations,deepEnabled?95:(lowSpec?125:160)),power,juliaReal,juliaImag,palette,
   deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',
   deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?coarseDeep.toString():'0'};
  overviewPendingView={...view,scale:coarseScale,dscale:coarseDeep};
@@ -103,7 +109,7 @@ function deepAllowed(){return ['mandelbrot','julia'].includes(active.id);}
 function setDeepMode(enabled){if(enabled&&!deepAllowed()){showToast('Precisione multipla disponibile per Mandelbrot e Julia');return;}if(enabled&&!deepEnabled){if(typeof BigInt!=='function'){showToast('Questo dispositivo non supporta BigInt');return;}deepInit();}else if(!enabled&&deepEnabled){updateDeepApprox();deepEnabled=false;}$('deepZoomBtn')?.classList.toggle('active',deepEnabled);$('deepZoomBtn')?.setAttribute('aria-pressed',String(deepEnabled));$('deepZoomBtn').innerHTML=deepEnabled?'∞ <span>DEEP ON</span>':'∞ <span>DEEP ZOOM</span>';updateHUD();scheduleDraw();}
 function setDeepPrecision(bits){bits=+bits;if(![128,256,512,1024].includes(bits))return;if(!deepEnabled){deepBits=bits;return;}deepCx=fixedRescale(deepCx,deepBits,bits);deepCy=fixedRescale(deepCy,deepBits,bits);deepScale=fixedRescale(deepScale,deepBits,bits);deepBits=bits;if(deepScale<minDeepSpan())deepScale=minDeepSpan();updateDeepApprox();scheduleDraw();updateHUD();}
 function deepZoomAt(f,x,y){const r=canvas2d.getBoundingClientRect(),px=(x??(r.left+r.width/2))-r.left,py=(y??(r.top+r.height/2))-r.top,s=Math.min(r.width,r.height);const ox=deepRatioQ(2*px-r.width,2*s),oy=deepRatioQ(2*py-r.height,2*s);const wx=deepCx+fixedMul(ox,deepScale),wy=deepCy+fixedMul(oy,deepScale);f=Math.max(.05,Math.min(20,Number(f)||1));deepScale=fixedMul(deepScale,numberToFixed(f));if(deepScale<minDeepSpan())deepScale=minDeepSpan();deepCx=wx-fixedMul(ox,deepScale);deepCy=wy-fixedMul(oy,deepScale);updateDeepApprox();scheduleDraw();updateHUD();}
-function initWorker(){try{worker=new Worker('js/render-worker.js?v=468');worker.onmessage=e=>{let m=e.data;if(m.job!==job)return;if(m.progress!==undefined){workerProgress(m.progress);return;}if(m.error){console.warn('Errore renderer:',m.error);showFallback2d();hideLoader();return;}const image=new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height);if(canvas2d.width!==m.width)canvas2d.width=m.width;if(canvas2d.height!==m.height)canvas2d.height=m.height;const ctx=canvas2d.getContext('2d',{alpha:false});ctx.putImageData(image,0,0);lastFrame=document.createElement('canvas');lastFrame.width=canvas2d.width;lastFrame.height=canvas2d.height;lastFrame.getContext('2d').drawImage(canvas2d,0,0);lastRenderView=activeRenderView||getViewState();clearPreview();finishLoader();updateStats();};worker.onerror=e=>{console.warn('Worker non disponibile',e);worker?.terminate();worker=null;showFallback2d();hideLoader();showToast('Anteprima semplificata: motore in riavvio');};}catch(e){console.warn('Impossibile avviare il worker',e);worker=null;showFallback2d();}}
+function initWorker(){try{worker=new Worker('js/render-worker.js?v=469');worker.onmessage=e=>{let m=e.data;if(m.job!==job)return;if(m.progress!==undefined){workerProgress(m.progress);return;}if(m.error){console.warn('Errore renderer:',m.error);showFallback2d();hideLoader();return;}const image=new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height);if(canvas2d.width!==m.width)canvas2d.width=m.width;if(canvas2d.height!==m.height)canvas2d.height=m.height;const ctx=canvas2d.getContext('2d',{alpha:false});ctx.putImageData(image,0,0);lastFrame=document.createElement('canvas');lastFrame.width=canvas2d.width;lastFrame.height=canvas2d.height;lastFrame.getContext('2d').drawImage(canvas2d,0,0);lastRenderView=activeRenderView||getViewState();clearPreview();finishLoader();updateStats();};worker.onerror=e=>{console.warn('Worker non disponibile',e);worker?.terminate();worker=null;showFallback2d();hideLoader();showToast('Anteprima semplificata: motore in riavvio');};}catch(e){console.warn('Impossibile avviare il worker',e);worker=null;showFallback2d();}}
 
 function showFallback2d(){
  if(is3d)return;
@@ -137,7 +143,11 @@ function draw2d(hd=false){if(is3d){draw3d(hd);return;}if(!worker)initWorker();if
  requestOverview();
  const cfg={job,width:w,height:h,type:active.id,cx:centerX,cy:centerY,scale,baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,rotation,iterations:renderIterations,power,juliaReal,juliaImag,palette,deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?deepScale.toString():'0'};worker.postMessage(cfg);updateHUD();}
 function getViewState(){const r=stage.getBoundingClientRect();return {id:active.id,palette,params:[iterations,power,juliaReal,juliaImag].join(':'),cx:centerX,cy:centerY,scale,rotation,deep:deepEnabled,bits:deepBits,dcx:deepCx,dcy:deepCy,dscale:deepScale,stageW:r.width,stageH:r.height};}
-function clearPreview(){if(!previewCanvas)return;previewCanvas.width=1;previewCanvas.height=1;previewCanvas.hidden=true;previewActive=false;}
+function clearPreview(){
+ if(!previewCanvas)return;
+ stage.classList.remove('reprojecting');
+ previewCanvas.width=1;previewCanvas.height=1;previewCanvas.hidden=true;previewActive=false;
+}
 function ratioBigInt(a,b){if(b===0n)return 1;const neg=(a<0n)!==(b<0n),aa=a<0n?-a:a,bb=b<0n?-b:b;if(bb===0n)return 1;const q=(aa<<40n)/bb;let v=Number(q)/Math.pow(2,40);if(!Number.isFinite(v))v=1e6;v=Math.min(1e6,v);return neg?-v:v;}
 // Transform a previously rendered world-coordinate map into the *new* camera.
 // The same affine reprojection is used for the detailed frame and the broad
@@ -160,7 +170,7 @@ function paintReference(ctx,frame,from,rect,d,opacity=1){
  const co=Math.cos(rotation),si=Math.sin(rotation),screenDx=co*dx+si*dy,screenDy=-si*dx+co*dy;
  ratio=Math.min(1e5,Math.max(1e-5,ratio*newMin/oldMin));
  const dw=oldW*ratio,dh=oldH*ratio;
- ctx.save();ctx.globalAlpha=opacity;
+ ctx.save();ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.globalAlpha=opacity;
  ctx.translate((rect.width/2+screenDx)*d,(rect.height/2+screenDy)*d);
  ctx.rotate((from.rotation||0)-rotation);
  ctx.drawImage(frame,-dw*d/2,-dh*d/2,dw*d,dh*d);
@@ -178,11 +188,22 @@ function updatePreview(){
  // Until the real overview is ready, diffuse the last frame behind the sharp
  // reprojected area. Unlike the old code this never paints black borders.
  if(!hasOverview&&hasDetail){
-  ctx.save();ctx.filter='blur(12px) brightness(.60)';ctx.drawImage(lastFrame,0,0,w,h);ctx.restore();
+  // The temporary background must be uniformly scaled. A direct stretch
+  // from a portrait canvas to a landscape canvas would visibly squash the art.
+  const oldRatio=lastRenderView.stageW/Math.max(1,lastRenderView.stageH);
+  const fittedW=Math.max(w,h*oldRatio),fittedH=fittedW/oldRatio;
+  const coverScale=Math.max(w/fittedW,h/fittedH);
+  const fw=fittedW*coverScale,fh=fittedH*coverScale;
+  ctx.save();ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+  ctx.filter='blur(13px) brightness(.68)';
+  ctx.drawImage(lastFrame,(w-fw)/2,(h-fh)/2,fw,fh);ctx.restore();
  }
  if(hasOverview)paintReference(ctx,overviewFrame,overviewView,rect,d);
  if(hasDetail)paintReference(ctx,lastFrame,lastRenderView,rect,d);
  previewCanvas.hidden=false;previewActive=true;
+ // Hide the old canvas while the viewport dimensions differ from the last
+ // finished render. Otherwise CSS stretches its obsolete bitmap for a frame.
+ stage.classList.add('reprojecting');
 }
 
 function ensureRenderer3d(){
@@ -259,43 +280,49 @@ function resetView(){centerX=active.center[0];centerY=active.center[1];scale=act
 function toggleFavorite(){if(favorites.has(active.id))favorites.delete(active.id);else favorites.add(active.id);try{localStorage.setItem('fractint-favorites',JSON.stringify([...favorites]));}catch(_){}$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';renderLibrary();}
 function showFormulaInfo(){const f=active;$('modalContent').innerHTML=`<div class="modal-kicker">${f.group.toUpperCase()} · ${f.mode}</div><h2>${f.name}</h2><div class="formula-equation">${f.formula}</div><p>${f.description}</p><div class="modal-grid"><div><span>FAMIGLIA</span><b>${f.category}</b></div><div><span>RENDERER</span><b>${f.mode==='3D'?'WebGL2 ray marching':'CPU multithread / worker'}</b></div><div><span>POSIZIONE X</span><b>${centerX.toFixed(6)}</b></div><div><span>ZOOM</span><b>${is3d?renderer3d.zoom.toFixed(3)+'×':zoomDisplay()}</b></div></div>`;openModal();}
 function openModal(){ $('modalBackdrop').classList.add('open');}function closeModal(){$('modalBackdrop').classList.remove('open');}
-// v4.6 FIX: viewport transitions preserve the exact world-coordinate pixel scale.
+// v4.6.9: a single CSS-pixel world scale survives every Telegram viewport
+// resize. Do not snap to an early intermediate dimension, nor use any
+// size-dependent correction from an old anchor after the gesture has moved.
 let artOnly=false,pressExitTimer=0,tgBackHandler=null;
-let viewportAnchor=null,fullscreenGeneration=0,viewportReleaseTimer=0;
+let fullscreenGeneration=0;
 function screenGeometry(){const r=stage.getBoundingClientRect();return {width:r.width,height:r.height,short:Math.max(1,Math.min(r.width,r.height))};}
-function captureViewportAnchor(){return {geometry:screenGeometry(),scale,deepScale,centerX,centerY,rot:rotation,zoom:renderer3d?.zoom??1,frameRatio:renderer3d?.frameRatio??1};}
-function applyViewportAnchor(anchor,after){
- if(!anchor||!after||after.short<1)return;
- const ratio=after.short/anchor.geometry.short;
- // Invariant: world units per CSS pixel = scale / min(canvasCSSWidth,canvasCSSHeight).
- // Never adjust X/Y or rotation, so there is no accidental pan during fullscreen.
- if(deepEnabled){deepScale=anchor.deepScale*BigInt(Math.round(ratio*1000000000))/1000000000n;updateDeepApprox();}
- else if(!is3d){scale=anchor.scale*ratio;}
- else if(renderer3d){renderer3d.zoom=anchor.zoom;renderer3d.frameRatio=anchor.frameRatio*after.height/Math.max(1,anchor.geometry.height);}
- updateHUD();
+function syncViewportGeometry(){
+ const next=screenGeometry();if(next.width<1||next.height<1)return false;
+ if(!stageGeometryRef){stageGeometryRef=next;return false;}
+ const old=stageGeometryRef;
+ if(Math.abs(next.width-old.width)<.25&&Math.abs(next.height-old.height)<.25)return false;
+ stageGeometryRef=next;
+ const ratio=next.short/old.short;
+ // Keep world units / CSS pixel invariant. Centre and rotation never change.
+ if(deepEnabled){deepScale=deepScale*BigInt(Math.round(ratio*1000000000))/1000000000n;
+  if(deepScale<minDeepSpan())deepScale=minDeepSpan();updateDeepApprox();}
+ else if(!is3d)scale*=ratio;
+ else if(renderer3d?.ok){
+  // The 3D shader normalizes uv by canvas height, not its shortest side.
+  renderer3d.frameRatio*=next.height/Math.max(1,old.height);
+ }
+ if(!is3d){updatePreview();scheduleDraw(false);}else{resize3d(false);scheduleDraw(false);}
+ updateHUD();return true;
 }
-function setupFullViewport(){
- if(!viewportAnchor)return;
- const after=screenGeometry();if(after.width<1||after.height<1)return;
- const was=fullscreenViewport;
- if(was&&Math.abs(after.width-was.width)<.5&&Math.abs(after.height-was.height)<.5)return;
- applyViewportAnchor(viewportAnchor,after);fullscreenViewport=after;
- if(!is3d)updatePreview();
- fullscreenPendingRender=true;
- // Only the final stable geometry is rendered; Telegram may issue many intermediate events.
- scheduleDraw(false);
+function scheduleGeometrySync(){
+ if(stageResizeRAF)return;
+ stageResizeRAF=requestAnimationFrame(()=>{stageResizeRAF=0;syncViewportGeometry();});
 }
-function triggerFullscreenResize(){if(!viewportAnchor)return;clearTimeout(fullscreenResizeTimer);clearTimeout(viewportReleaseTimer);fullscreenResizeTimer=setTimeout(setupFullViewport,220);viewportReleaseTimer=setTimeout(()=>{viewportAnchor=null;},2200);}
 async function toggleArtOnly(force){
- const next=typeof force==='boolean'?force:!artOnly,tg=window.Telegram?.WebApp;if(next===artOnly)return;
+ const next=typeof force==='boolean'?force:!artOnly,tg=window.Telegram?.WebApp;
+ if(next===artOnly)return;
  const token=++fullscreenGeneration;
- clearTimeout(renderTimer);clearTimeout(fullscreenResizeTimer);clearTimeout(viewportReleaseTimer);
- viewportAnchor=captureViewportAnchor();fullscreenViewport=viewportAnchor.geometry;
- job++; // discard obsolete worker results for the old viewport
- artOnly=next;document.body.classList.toggle('art-only',next);$('fullscreenBtn').setAttribute('aria-pressed',String(next));
- applyViewportAnchor(viewportAnchor,screenGeometry());
- if(!is3d)updatePreview();
- fullscreenPendingRender=true;
+ clearTimeout(renderTimer);
+ // Take the previous frame as the stable reference before CSS changes.
+ if(!is3d&&lastFrame&&lastRenderView)updatePreview();
+ stageGeometryRef=screenGeometry();
+ job++;
+ artOnly=next;
+ document.body.classList.toggle('art-only',next);
+ $('fullscreenBtn').setAttribute('aria-pressed',String(next));
+ syncViewportGeometry();
+ // Telegram changes its viewport in several separate steps. ResizeObserver
+ // handles each settled layout; keep the preview until the new image arrives.
  if(next){
   try{
    if(tg?.isVersionAtLeast?.('8.0')&&typeof tg.requestFullscreen==='function'){
@@ -306,15 +333,19 @@ async function toggleArtOnly(force){
   }catch(e){console.warn('Fullscreen API:',e);}
   if(tg?.BackButton){tgBackHandler=()=>toggleArtOnly(false);tg.BackButton.onClick(tgBackHandler);tg.BackButton.show();}
  }else{
-
   if(tg?.BackButton){try{tg.BackButton.hide();if(tgBackHandler)tg.BackButton.offClick?.(tgBackHandler);}catch(_){}tgBackHandler=null;}
   try{if(tg?.isFullscreen&&typeof tg.exitFullscreen==='function')tg.exitFullscreen();else if(document.fullscreenElement&&document.exitFullscreen)await document.exitFullscreen();}catch(e){console.warn('Fullscreen exit:',e);}
   tg?.setHeaderColor?.('#0b1020');tg?.setBackgroundColor?.('#080b16');
  }
  if(token!==fullscreenGeneration)return;
- triggerFullscreenResize();
- // Two RAFs let the browser settle CSS before the new render begins.
- requestAnimationFrame(()=>requestAnimationFrame(()=>{if(token!==fullscreenGeneration)return;applyViewportAnchor(viewportAnchor,screenGeometry());if(!is3d)updatePreview();triggerFullscreenResize();}));
+ scheduleGeometrySync();
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{
+  if(token!==fullscreenGeneration)return;
+  if(!syncViewportGeometry()){
+   // Trigger at least one render for the viewport restored with no size diff.
+   scheduleDraw(false);
+  }
+ }));
 }
 function armInvisibleExit(e){if(!artOnly)return;const r=stage.getBoundingClientRect();if(e.clientX>r.right-78&&e.clientY<r.top+78){clearTimeout(pressExitTimer);pressExitTimer=setTimeout(()=>toggleArtOnly(false),900);}}
 function disarmInvisibleExit(){clearTimeout(pressExitTimer);pressExitTimer=0;}
@@ -331,7 +362,7 @@ function setupInteractions(){
  $('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal();};
  $('openLibrary').onclick=()=>$('library').classList.add('open');$('closeLibrary').onclick=()=>$('library').classList.remove('open');$('collapseControls').onclick=()=>{$('controlPanel').classList.toggle('collapsed');};
  const pointerDown=e=>{
-  if(viewportAnchor){viewportAnchor=null;clearTimeout(viewportReleaseTimer);clearTimeout(fullscreenResizeTimer);}
+
   if(e.target.closest('button,a,input,select'))return;
   if(e.pointerType==='mouse'&&e.button!==0)return;
   if(pinch)return;
@@ -358,13 +389,13 @@ function setupInteractions(){
  stage.addEventListener('pointercancel',pointerUp);
  stage.addEventListener('wheel',e=>{e.preventDefault();zoom(e.deltaY<0?.8:1.25,e.clientX,e.clientY);},{passive:false});
  stage.addEventListener('dblclick',e=>zoom(.5,e.clientX,e.clientY));
- stage.addEventListener('touchstart',e=>{if(viewportAnchor){viewportAnchor=null;clearTimeout(viewportReleaseTimer);clearTimeout(fullscreenResizeTimer);}if(e.touches.length===2)pinchGesture(e.touches);},{passive:false});
+ stage.addEventListener('touchstart',e=>{if(e.touches.length===2)pinchGesture(e.touches);},{passive:false});
  stage.addEventListener('touchmove',e=>{if(e.touches.length===2){e.preventDefault();pinchGesture(e.touches);}},{passive:false});
  stage.addEventListener('touchend',e=>{if(e.touches.length<2)pinch=null;if(e.touches.length===1)drag=null;},{passive:true});
  stage.addEventListener('touchcancel',()=>{pinch=null;drag=null;});
  window.addEventListener('keydown',e=>{if(e.target.matches('input,select'))return;if(e.key==='+'||e.key==='=')zoom(.7);if(e.key==='-')zoom(1.4);if(e.key.toLowerCase()==='r')resetView();if(e.key==='Escape'){if(artOnly){toggleArtOnly(false);return;}$('library').classList.remove('open');closeModal();}if(e.key===' '){e.preventDefault();$('controlPanel').classList.toggle('collapsed');}if(e.key.startsWith('Arrow')){if(deepEnabled){let d=deepScale/12n;if(e.key==='ArrowLeft')deepCx-=d;if(e.key==='ArrowRight')deepCx+=d;if(e.key==='ArrowUp')deepCy-=d;if(e.key==='ArrowDown')deepCy+=d;updateDeepApprox();}else{let d=scale*.08;if(e.key==='ArrowLeft')centerX-=d;if(e.key==='ArrowRight')centerX+=d;if(e.key==='ArrowUp')centerY-=d;if(e.key==='ArrowDown')centerY+=d;}scheduleDraw();updateHUD();}});
- window.addEventListener('resize',()=>{if(viewportAnchor){triggerFullscreenResize();return;}if(is3d)resize3d(false);else scheduleDraw(false);});
- window.visualViewport?.addEventListener('resize',()=>{if(viewportAnchor)triggerFullscreenResize();});
+ window.addEventListener('resize',scheduleGeometrySync);
+ window.visualViewport?.addEventListener('resize',scheduleGeometrySync);
 }
 
 function setupPaletteChooser(){
@@ -417,6 +448,6 @@ function initArtExplorer(){
  $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
 }
 
-function start(){setupPaletteChooser();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{if(viewportAnchor&&e?.isStateStable)triggerFullscreenResize();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=468',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
+function start(){stageGeometryRef=screenGeometry();if(typeof ResizeObserver!=='undefined')new ResizeObserver(scheduleGeometrySync).observe(stage);setupPaletteChooser();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{scheduleGeometrySync();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=469',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
 try{start();}catch(e){console.error('Avvio Fractal Art Explorer:',e);const g=document.getElementById('artCards');if(g&&!g.children.length&&window.FRACTAL_ART_PRESETS){g.innerHTML=window.FRACTAL_ART_PRESETS.map(p=>`<button class="art-card" onclick="location.reload()"><span class="art-card-copy"><strong>${p.title}</strong><small>${p.subtitle}</small></span></button>`).join('');}const status=document.getElementById('engineStatus');if(status)status.textContent='AVVIO INCOMPLETO — RIAPRI LA MINI APP';}
 })();

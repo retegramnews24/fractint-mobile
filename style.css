@@ -136,3 +136,9 @@ body.art-only #canvas2d.hidden,body.art-only #canvas3d.hidden{display:none!impor
 .bottom-actions{flex:none;display:flex;gap:6px}
 .color-shuffle{background:#38234e;border-color:#79639f;color:#e7cefb;font-weight:700}
 @media(max-width:760px){.palette-chip{padding:5px 8px;font-size:10px}.palette-chip .swatch{width:19px;height:15px}.bottom-toolbar{padding:0 8px}.bottom-actions .mini-btn{padding:6px 8px}}
+
+/* v4.6.9 — never stretch an old aspect ratio while transitioning viewports. */
+.visual-stage #canvas2d,.visual-stage #canvas3d {object-fit:contain!important;object-position:center center!important;}
+.visual-stage #previewCanvas {object-fit:contain!important;object-position:center center!important;}
+.visual-stage.reprojecting #canvas2d {visibility:hidden!important;}
+.visual-stage.reprojecting #previewCanvas {visibility:visible!important;}
