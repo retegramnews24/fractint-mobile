@@ -1,5 +1,5 @@
-const CACHE='fractal-art-explorer-v4-6-5-telegram';
-const CORE=['./','index.html','style.css','manifest.webmanifest','js/catalog.js','js/art-presets.js','js/render-worker.js','js/renderer3d.js','js/app.js','js/splash.js','assets/icon.svg'];
+const CACHE='fractal-art-explorer-v4-6-6-art';
+const CORE=['./','index.html','style.css','manifest.webmanifest','js/palettes.js','js/catalog.js','js/art-presets.js','js/render-worker.js','js/renderer3d.js','js/app.js','js/splash.js','assets/icon.svg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{const req=event.request,url=new URL(req.url);if(req.method!=='GET'||url.origin!==location.origin)return;

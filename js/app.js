@@ -2,19 +2,14 @@
 const $=id=>document.getElementById(id),catalog=window.FRACTAL_CATALOG;let active=catalog[0],category='all',job=0,worker=null,renderer3d=null,centerX=-.5,centerY=0,scale=3.2,rotation=0,iterations=220,power=2,palette='cosmic',juliaReal=-.8,juliaImag=.156,quality=.7,drag=null,pinch=null,renderTimer=0,is3d=false,collapsed=false,deepEnabled=false,deepBits=512,deepCx=0n,deepCy=0n,deepScale=0n,favorites=new Set(JSON.parse(localStorage.getItem('fractint-favorites')||'[]'));
 const canvas2d=$('canvas2d'),canvas3d=$('canvas3d'),previewCanvas=$('previewCanvas'),stage=$('visualStage');
 let lastFrame=null,lastRenderView=null,activeRenderView=null,previewActive=false;
-const captureProfiles={screen:{factor:1,budget:3_000_000,label:'NORMALE'},hd:{factor:2,budget:8_000_000,label:'HD'},ultra:{factor:3,budget:12_000_000,label:'ULTRA'}};
-let captureQuality='hd';
-
 let renderProgressTimer=0,renderHideTimer=0,renderStartedAt=0,renderEstimateMs=3500,renderHasWorkerProgress=false,renderToken=0;
-let exportWorker=null,exportInProgress=false,exportBusyToken=0,exportDockTimer=0,fullscreenResizeTimer=0,fullscreenViewport=null,normalExitViewport=null,fullscreenPendingRender=false;
+let fullscreenResizeTimer=0,fullscreenViewport=null,fullscreenPendingRender=false;
 const qFactor=()=>1n<<BigInt(deepBits);
-function getCaptureProfile(){return captureProfiles[captureQuality]||captureProfiles.hd;}
 function getRenderTarget(rect,highQuality=false,for3d=false){
  const dpr=Math.min(3.25,Math.max(1,window.devicePixelRatio||1));
- const profile=getCaptureProfile();
- const density=highQuality?dpr*profile.factor:Math.min(dpr,1.6)*quality;
+ const density=highQuality?Math.min(3.2,dpr*1.6):Math.min(dpr,1.6)*quality;
  let w=Math.max(240,Math.round(rect.width*density)),h=Math.max(180,Math.round(rect.height*density));
- let budget=highQuality?profile.budget:3_600_000;
+ let budget=highQuality?6_000_000:3_600_000;
  if(for3d)budget=Math.min(budget,highQuality?5_000_000:1_800_000);
  const memory=Number(navigator.deviceMemory)||0,cores=Number(navigator.hardwareConcurrency)||0;
  if(memory>0&&memory<=4)budget*=.72;
@@ -23,7 +18,7 @@ function getRenderTarget(rect,highQuality=false,for3d=false){
  const sideScale=Math.min(1,6144/Math.max(w,h));
  const fit=Math.min(pixelScale,sideScale);
  w=Math.max(160,Math.round(w*fit));h=Math.max(120,Math.round(h*fit));
- return {width:w,height:h,pixels:w*h,profile,density};
+ return {width:w,height:h,pixels:w*h,density};
 }
 function setRenderProgress(value){const pct=Math.max(0,Math.min(100,Math.round(value)));$('renderPercent').textContent=pct+'%';$('renderProgressBar').style.width=pct+'%';}
 function showLoader(msg='CALCOLO IN CORSO',estimateMs=3500){
@@ -35,7 +30,7 @@ function showLoader(msg='CALCOLO IN CORSO',estimateMs=3500){
  renderProgressTimer=setInterval(()=>{if(token!==renderToken||renderHasWorkerProgress)return;const elapsed=performance.now()-renderStartedAt;const estimated=4+90*(1-Math.exp(-elapsed/renderEstimateMs));setRenderProgress(Math.min(94,estimated));},120);
 }
 function workerProgress(value){renderHasWorkerProgress=true;setRenderProgress(value);}
-function finishLoader(){clearInterval(renderProgressTimer);renderHasWorkerProgress=true;setRenderProgress(100);const token=renderToken;clearTimeout(renderHideTimer);renderHideTimer=setTimeout(()=>{if(token===renderToken){hideLoader();if(artOnly&&!exportInProgress)showExportDock(5000);}},420);}
+function finishLoader(){clearInterval(renderProgressTimer);renderHasWorkerProgress=true;setRenderProgress(100);const token=renderToken;clearTimeout(renderHideTimer);renderHideTimer=setTimeout(()=>{if(token===renderToken){hideLoader();}},420);}
 function hideLoader(){clearInterval(renderProgressTimer);clearTimeout(renderHideTimer);$('renderOverlay').classList.remove('show');$('engineStatus').innerHTML='<i></i> ENGINE READY';}
 function numberToFixed(n,bits=deepBits){const q=1n<<BigInt(bits),den=1000000000000000n,num=BigInt(Math.round(n*1e15));return num*q/den;}
 function fixedToNumber(v,bits=deepBits){if(v===0n)return 0;const shift=Math.max(0,bits-44),sv=v>>BigInt(shift);return Number(sv)/Math.pow(2,bits-shift);}
@@ -55,11 +50,11 @@ function initWorker(){try{worker=new Worker('js/render-worker.js');worker.onmess
 function showToast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600);}
 function setCanvasMode(three){is3d=three;if(three)clearPreview();canvas2d.classList.toggle('hidden',three);canvas3d.classList.toggle('hidden',!three);$('threeControls').hidden=!three;if(three)requestAnimationFrame(()=>resize3d(false));$('powerBlock').hidden=three;$('juliaBlock').hidden=active.id!=='julia';$('modeLabel').textContent=three?'3D RAY MARCH':'2D FRACTAL';$('precisionLabel').textContent=three?'WEBGL2 GPU':'CPU / WORKER';$('stageHint').textContent=three?'TRASCINA PER RUOTARE · DUE DITA PER ZOOM E ROTAZIONE':'TRASCINA · PIZZICA PER ZOOM · RUOTA CON DUE DITA';$('renderQualityBlock').hidden=three;}
 function draw2d(hd=false){if(is3d){draw3d(hd);return;}if(!worker)initWorker();if(!worker)return;const rect=stage.getBoundingClientRect(),highQuality=!!hd,target=getRenderTarget(rect,highQuality,false);let w=target.width,h=target.height,renderIterations=iterations;
- if(deepEnabled){const baseSide=deepBits>=1024?340:deepBits>=512?460:deepBits>=256?620:820;const maxSide=Math.min(1500,Math.round(baseSide*(highQuality?Math.sqrt(target.profile.factor):1)));const basePixels=deepBits>=1024?520000:deepBits>=512?760000:deepBits>=256?980000:1300000;const deepBudget=Math.min(1800000,Math.round(basePixels*(highQuality?target.profile.factor:1)));const shrink=Math.min(1,maxSide/Math.max(w,h),Math.sqrt(deepBudget/(w*h)));w=Math.max(96,Math.round(w*shrink));h=Math.max(96,Math.round(h*shrink));const iterCap=deepBits>=1024?700:deepBits>=512?900:deepBits>=256?1050:1200;renderIterations=Math.min(iterations,iterCap);}
+ if(deepEnabled){const baseSide=deepBits>=1024?340:deepBits>=512?460:deepBits>=256?620:820;const maxSide=Math.min(1500,Math.round(baseSide*(highQuality?1.25:1)));const basePixels=deepBits>=1024?520000:deepBits>=512?760000:deepBits>=256?980000:1300000;const deepBudget=Math.min(1800000,Math.round(basePixels*(highQuality?1.6:1)));const shrink=Math.min(1,maxSide/Math.max(w,h),Math.sqrt(deepBudget/(w*h)));w=Math.max(96,Math.round(w*shrink));h=Math.max(96,Math.round(h*shrink));const iterCap=deepBits>=1024?700:deepBits>=512?900:deepBits>=256?1050:1200;renderIterations=Math.min(iterations,iterCap);}
  if(canvas2d.width!==w)canvas2d.width=w;if(canvas2d.height!==h)canvas2d.height=h;
  job++;activeRenderView=getViewState();const mp=w*h/1000000;const weight=deepEnabled?4.2:Math.max(.45,renderIterations/220);const estimate=Math.min(45000,Math.max(900,mp*weight*(active.mode==='3D'?300:1350)));
  const showProgress=fullscreenPendingRender||!artOnly||highQuality;fullscreenPendingRender=false;
- if(showProgress)showLoader(deepEnabled?'DEEP ZOOM · '+deepBits+' BIT':'RENDERING ARTWORK',estimate);else hideLoader();$('renderQualityHint').textContent=`${w} × ${h} · ${mp.toFixed(1)} MP · ${highQuality?target.profile.label:'ANTEPRIMA'}`;
+ if(showProgress)showLoader(deepEnabled?'DEEP ZOOM · '+deepBits+' BIT':'RENDERING ARTWORK',estimate);else hideLoader();$('renderQualityHint').textContent=`${w} × ${h} · ${mp.toFixed(1)} MP · ${highQuality?'ALTA DEFINIZIONE':'ANTEPRIMA'}`;
  const cfg={job,width:w,height:h,type:active.id,cx:centerX,cy:centerY,scale,baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,rotation,iterations:renderIterations,power,juliaReal,juliaImag,palette,deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?deepScale.toString():'0'};worker.postMessage(cfg);updateHUD();}
 function getViewState(){const r=stage.getBoundingClientRect();return {id:active.id,cx:centerX,cy:centerY,scale,rotation,deep:deepEnabled,bits:deepBits,dcx:deepCx,dcy:deepCy,dscale:deepScale,stageW:r.width,stageH:r.height};}
 function clearPreview(){if(!previewCanvas)return;previewCanvas.width=1;previewCanvas.height=1;previewCanvas.hidden=true;previewActive=false;}
@@ -96,7 +91,7 @@ function updatePreview(){
  previewCanvas.hidden=false;previewActive=true;
 }
 function resize3d(highQuality=false){if(!renderer3d||!renderer3d.ok)return;if(highQuality){const target=getRenderTarget(stage.getBoundingClientRect(),true,true);renderer3d.resize(target.width,target.height);}else renderer3d.resize();}
-function draw3d(highQuality=false){if(!renderer3d||!renderer3d.ok)return;const target=highQuality?getRenderTarget(stage.getBoundingClientRect(),true,true):null;const estimate=Math.max(800,Math.min(12000,(target?target.pixels:canvas3d.width*canvas3d.height)/1000000*1700));const showProgress=fullscreenPendingRender||!artOnly||highQuality;fullscreenPendingRender=false;if(showProgress)showLoader('SCULTURA IN RENDERING',estimate);else hideLoader();$('renderQualityHint').textContent=target?`${target.width} × ${target.height} · ${(target.pixels/1e6).toFixed(1)} MP · ${target.profile.label}`:'RENDER GPU';requestAnimationFrame(()=>{if(highQuality&&target)renderer3d.resize(target.width,target.height);renderer3d.set({kind:active.id==='mandelbulb'?0:active.id==='menger'?1:active.id==='mandelbox'?2:3,power:+$('threePower').value,detail:+$('threeDetail').value,palette:['cosmic','fire','ocean','aurora','mono','candy','gold','neon'].indexOf(palette)});workerProgress(82);requestAnimationFrame(()=>{try{renderer3d.gl?.finish();}catch(_){}finishLoader();$('renderStat').textContent='WebGL2 GPU';});});}
+function draw3d(highQuality=false){if(!renderer3d||!renderer3d.ok)return;const target=highQuality?getRenderTarget(stage.getBoundingClientRect(),true,true):null;const estimate=Math.max(800,Math.min(12000,(target?target.pixels:canvas3d.width*canvas3d.height)/1000000*1700));const showProgress=fullscreenPendingRender||!artOnly||highQuality;fullscreenPendingRender=false;if(showProgress)showLoader('SCULTURA IN RENDERING',estimate);else hideLoader();$('renderQualityHint').textContent=target?`${target.width} × ${target.height} · ${(target.pixels/1e6).toFixed(1)} MP · ${'ALTA DEFINIZIONE'}`:'RENDER GPU';requestAnimationFrame(()=>{if(highQuality&&target)renderer3d.resize(target.width,target.height);renderer3d.set({kind:active.id==='mandelbulb'?0:active.id==='menger'?1:active.id==='mandelbox'?2:3,power:+$('threePower').value,detail:+$('threeDetail').value,palette});workerProgress(82);requestAnimationFrame(()=>{try{renderer3d.gl?.finish();}catch(_){}finishLoader();$('renderStat').textContent='WebGL2 GPU';});});}
 function scheduleDraw(hd=false){if(!is3d){job++;updatePreview();}clearTimeout(renderTimer);const highQuality=!!hd;renderTimer=setTimeout(()=>is3d?draw3d(highQuality):draw2d(highQuality),45);}
 function updateHUD(){const z=zoomDisplay();$('zoomLabel').textContent='ZOOM '+(is3d?renderer3d?.zoom.toFixed(2)+'×':z);$('coordLabel').textContent='x: '+(deepEnabled?centerX.toPrecision(7):centerX.toFixed(5))+' · y: '+(deepEnabled?centerY.toPrecision(7):centerY.toFixed(5));$('positionStat').textContent=centerX.toFixed(3)+' / '+centerY.toFixed(3);$('zoomStat').textContent=is3d?renderer3d?.zoom.toFixed(2)+'×':z;$('precisionLabel').textContent=is3d?'WEBGL2 GPU':deepEnabled?'BIGINT '+deepBits+' BIT':'CPU / WORKER';}
 function updateStats(){updateHUD();$('renderStat').textContent=is3d?'WebGL2 GPU':'Canvas CPU / Worker';}
@@ -191,42 +186,6 @@ function setupFullViewport(){
  scheduleDraw(false);
 }
 function triggerFullscreenResize(){if(!viewportAnchor)return;clearTimeout(fullscreenResizeTimer);clearTimeout(viewportReleaseTimer);fullscreenResizeTimer=setTimeout(setupFullViewport,220);viewportReleaseTimer=setTimeout(()=>{viewportAnchor=null;},2200);}
-function showExportDock(duration=4800){if(!artOnly||exportInProgress)return;
- const d=$('exportDock');d.hidden=false;d.classList.remove('dock-idle');clearTimeout(exportDockTimer);
- if(duration)exportDockTimer=setTimeout(()=>d.classList.add('dock-idle'),duration);
-}
-function hideExportDock(){clearTimeout(exportDockTimer);$('exportDock').hidden=true;}
-
-// Screenshot semplice: usiamo la cattura nativa Android, non Blob o popup bloccati dalla WebView Telegram.
-// Il sistema Android salva direttamente nella cartella Screenshots, senza token né backend.
-let screenshotHintTimer=0;
-function removeScreenshotHint(){
- clearTimeout(screenshotHintTimer);
- const hint=document.getElementById('screenCaptureHint');
- if(hint)hint.remove();
-}
-function showScreenshotHint(){
- if(!artOnly)return;
- let hint=document.getElementById('screenCaptureHint');
- if(!hint){
-  hint=document.createElement('div');
-  hint.id='screenCaptureHint';
-  hint.setAttribute('role','status');
-  hint.setAttribute('aria-live','polite');
-  hint.innerHTML='<strong>📷 Screenshot pronto</strong><span>Premi Accensione + Volume giù insieme</span><small>La foto va nella Galleria → Screenshots</small>';
-  document.body.appendChild(hint);
- }
- hint.hidden=false;hint.classList.remove('vanish');
- clearTimeout(screenshotHintTimer);
- screenshotHintTimer=setTimeout(()=>{hint.classList.add('vanish');screenshotHintTimer=setTimeout(()=>{if(hint.classList.contains('vanish'))hint.remove();},500);},3800);
-}
-function startScreenshotMode(){
- if(!artOnly){
-  void toggleArtOnly(true);
-  setTimeout(showScreenshotHint,850);
- }else showScreenshotHint();
-}
-
 async function toggleArtOnly(force){
  const next=typeof force==='boolean'?force:!artOnly,tg=window.Telegram?.WebApp;if(next===artOnly)return;
  const token=++fullscreenGeneration;
@@ -238,7 +197,6 @@ async function toggleArtOnly(force){
  if(!is3d)updatePreview();
  fullscreenPendingRender=true;
  if(next){
-  hideExportDock();
   try{
    if(tg?.isVersionAtLeast?.('8.0')&&typeof tg.requestFullscreen==='function'){
     tg.setHeaderColor?.('#000000');tg.setBackgroundColor?.('#000000');tg.requestFullscreen();
@@ -248,7 +206,7 @@ async function toggleArtOnly(force){
   }catch(e){console.warn('Fullscreen API:',e);}
   if(tg?.BackButton){tgBackHandler=()=>toggleArtOnly(false);tg.BackButton.onClick(tgBackHandler);tg.BackButton.show();}
  }else{
-  removeScreenshotHint();hideExportDock();
+
   if(tg?.BackButton){try{tg.BackButton.hide();if(tgBackHandler)tg.BackButton.offClick?.(tgBackHandler);}catch(_){}tgBackHandler=null;}
   try{if(tg?.isFullscreen&&typeof tg.exitFullscreen==='function')tg.exitFullscreen();else if(document.fullscreenElement&&document.exitFullscreen)await document.exitFullscreen();}catch(e){console.warn('Fullscreen exit:',e);}
   tg?.setHeaderColor?.('#0b1020');tg?.setBackgroundColor?.('#080b16');
@@ -260,235 +218,21 @@ async function toggleArtOnly(force){
 }
 function armInvisibleExit(e){if(!artOnly)return;const r=stage.getBoundingClientRect();if(e.clientX>r.right-78&&e.clientY<r.top+78){clearTimeout(pressExitTimer);pressExitTimer=setTimeout(()=>toggleArtOnly(false),900);}}
 function disarmInvisibleExit(){clearTimeout(pressExitTimer);pressExitTimer=0;}
-function imageFileName(){return 'fractal-'+(activeArtId||active.id)+'-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';}
-function exportDimensions(){const r=stage.getBoundingClientRect(),profile=getCaptureProfile();
- const pixelRatio=Math.max(1,window.devicePixelRatio||1),factor=profile.factor;
- let w=Math.round(r.width*pixelRatio*factor),h=Math.round(r.height*pixelRatio*factor);
- let budget=profile.budget;
- if(navigator.deviceMemory&&navigator.deviceMemory<=4)budget=Math.round(budget*.68);
- if(is3d)budget=Math.min(budget,captureQuality==='ultra'?2_600_000:captureQuality==='hd'?1_700_000:1_000_000);
- const glMax=is3d&&renderer3d?.gl?renderer3d.gl.getParameter(renderer3d.gl.MAX_RENDERBUFFER_SIZE):8192;
- let fit=Math.min(1,Math.sqrt(budget/(w*h)),Math.min(8192,glMax)/Math.max(w,h));
- w=Math.max(120,Math.floor(w*fit));h=Math.max(120,Math.floor(h*fit));return {width:w,height:h,pixels:w*h};
-}
-function workerExportImage(cfg){return new Promise((resolve,reject)=>{
- const current=++exportBusyToken;let finished=false;
- const ew=new Worker('js/render-worker.js');exportWorker=ew;
- const close=()=>{finished=true;ew.terminate();if(exportWorker===ew)exportWorker=null;};
- ew.onmessage=ev=>{if(current!==exportBusyToken||finished)return;const m=ev.data;
-  if(m.progress!==undefined){setRenderProgress(Math.min(99,m.progress));return;}
-  if(m.error){close();reject(new Error(m.error));return;}
-  if(!m.pixels)return;
-  try{const cn=document.createElement('canvas');cn.width=m.width;cn.height=m.height;
-   cn.getContext('2d',{alpha:false}).putImageData(new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height),0,0);
-   cn.toBlob(blob=>{close();blob?resolve(blob):reject(new Error('Impossibile creare il PNG'));},'image/png');
-  }catch(error){close();reject(error);}
- };
- ew.onerror=error=>{close();reject(new Error('Worker PNG non disponibile'));};
- ew.postMessage(cfg);
- });}
-async function renderExportPNG(){const {width,height}=exportDimensions();
- if(is3d){const cn=document.createElement('canvas');cn.width=width;cn.height=height;
-  const renderer=new FractInt3D(cn);if(!renderer.ok)throw new Error('WebGL2 non supportato');
-  renderer.rotX=renderer3d.rotX;renderer.rotY=renderer3d.rotY;renderer.rotZ=renderer3d.rotZ;renderer.zoom=renderer3d.zoom;renderer.frameRatio=renderer3d.frameRatio;
-  renderer.resize(width,height);
-  renderer.set({kind:active.id==='mandelbulb'?0:active.id==='menger'?1:active.id==='mandelbox'?2:3,power:+$('threePower').value,detail:+$('threeDetail').value,palette:['cosmic','fire','ocean','aurora','mono','candy','gold','neon'].indexOf(palette)});
-  renderer.gl.finish();setRenderProgress(92);
-  return await new Promise((resolve,reject)=>cn.toBlob(blob=>{renderer.gl.getExtension('WEBGL_lose_context')?.loseContext();blob?resolve(blob):reject(new Error('PNG GPU non disponibile'));},'image/png'));
- }
- const cfg={job:1,width,height,type:active.id,cx:centerX,cy:centerY,scale,baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,rotation,iterations,power,juliaReal,juliaImag,palette,
- deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?deepScale.toString():'0'};
- return await workerExportImage(cfg);
-}
-// Fractal Art Explorer v4.6.2 — no untrusted blob: popup, no deceptive "saved" toast.
-// A signed Telegram Mini App session uploads the PNG to an optional secured backend.
-// Backend sends the original PNG as document to this user's private bot chat.
-const DOWNLOAD_SERVICE=(typeof window.FAE_DOWNLOAD_SERVICE==='string'?window.FAE_DOWNLOAD_SERVICE:'').trim().replace(/\/$/,'');
-let preparedPNGURL=null;
-function closeSaveSheet(){
- document.getElementById('saveSheet')?.remove();
- if(preparedPNGURL){URL.revokeObjectURL(preparedPNGURL);preparedPNGURL=null;}
- if(artOnly)showExportDock(3500);
-}
-function makeSaveSheet(blob,name){
- closeSaveSheet();
- preparedPNGURL=URL.createObjectURL(blob);
- const tg=window.Telegram?.WebApp;
- const hasSession=!!tg?.initData;
- const canSend=hasSession&&!!DOWNLOAD_SERVICE;
- const canShare=!!navigator.share&&!!navigator.canShare&&(()=>{try{return navigator.canShare({files:[new File([blob],name,{type:'image/png'})]});}catch{return false;}})();
- const isTelegram=!!(tg?.initData||tg?.platform&&tg.platform!=='unknown');
- const box=document.createElement('section');box.id='saveSheet';box.className='save-sheet save-sheet-simple';box.setAttribute('role','dialog');box.setAttribute('aria-label','Salvataggio frattale');
- const head=document.createElement('div');head.className='save-sheet-header';head.innerHTML='<strong>Immagine pronta</strong><button type="button" id="saveClose" aria-label="Chiudi">×</button>';
- const status=document.createElement('p');status.className='save-status';status.setAttribute('aria-live','polite');
- const actions=document.createElement('div');actions.className='save-sheet-actions';
- const preview=document.createElement('img');preview.src=preparedPNGURL;preview.alt='Anteprima del frattale';
- // The preview is deliberately NOT linked to a blob: popup: Telegram blocks it on many Android versions.
- const primary=document.createElement('button');primary.type='button';primary.className='save-primary';
- const second=document.createElement('button');second.type='button';second.className='save-secondary';
- const setBusy=(busy)=>{primary.disabled=busy;second.disabled=busy;primary.textContent=busy?'INVIO A TELEGRAM…':'INVIA ALLA CHAT DEL BOT';};
- if(canSend){
-   status.textContent='Invia il PNG originale alla chat privata del bot. Poi apri la chat e salva il file con Telegram.';
-   primary.textContent='INVIA ALLA CHAT DEL BOT';
-   primary.onclick=async()=>{
-    setBusy(true);status.textContent='Invio sicuro in corso…';
-    try{
-      const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),60000);
-      let response;
-      try{response=await fetch(DOWNLOAD_SERVICE+'/api/send',{method:'POST',headers:{'Content-Type':'image/png','X-Telegram-Init-Data':tg.initData,'X-File-Name':name},body:blob,cache:'no-store',signal:ctrl.signal});}
-      finally{clearTimeout(timer);}
-      const result=await response.json().catch(()=>({error:'Risposta server non valida'}));
-      if(!response.ok||!result.ok)throw Error(result.error||'Invio non riuscito ('+response.status+')');
-      status.textContent='✓ PNG ricevuto da Telegram! Apri la chat del bot: troverai il documento originale da salvare.';
-      if(result.bot_url&&/^https:\/\/t\.me\/[A-Za-z0-9_]+$/.test(result.bot_url)){
-        second.textContent='APRI LA CHAT DEL BOT';second.onclick=()=>{
-         if(tg?.openTelegramLink)tg.openTelegramLink(result.bot_url);
-         else location.href=result.bot_url;
-        };second.hidden=false;second.disabled=false;
-      }
-      primary.textContent='✓ INVIATO';primary.disabled=true;
-    }catch(e){
-      status.textContent=e.name==='AbortError'?'Invio scaduto: controlla la connessione.':(e.message||'Invio non riuscito.');
-      if(/start|blocked|forbidden|403/i.test(status.textContent))status.textContent+=' Apri la chat del tuo bot e premi /start, poi riprova.';
-      setBusy(false);
-    }
-   };
-   actions.append(primary);
-   second.hidden=true;second.textContent='APRI LA CHAT';actions.append(second);
- }else if(canShare){
-   status.textContent='Android può salvare il file dal menu di condivisione. Seleziona File oppure Telegram.';
-   primary.textContent='CONDIVIDI IL PNG';
-   primary.onclick=async()=>{try{await navigator.share({files:[new File([blob],name,{type:'image/png'})],title:'Fractal Art Explorer'});status.textContent='Condivisione terminata. Controlla la destinazione scelta.';}catch(e){if(e.name!=='AbortError')status.textContent='Condivisione non disponibile in questa WebView. Usa lo screenshot Android.';}};
-   actions.append(primary);
- }else if(!isTelegram){
-   status.textContent='Nel browser puoi scaricare il file originale.';
-   primary.textContent='SCARICA PNG';
-   primary.onclick=()=>{const a=document.createElement('a');a.href=preparedPNGURL;a.download=name;document.body.appendChild(a);a.click();a.remove();status.textContent='Download richiesto al browser. Controlla la cartella Download.';};
-   actions.append(primary);
- }else{
-   // No backend configured: don't offer two controls that silently fail inside Telegram Android.
-   status.textContent=hasSession?'Salvataggio Telegram non ancora configurato: occorre pubblicare il servizio HTTPS incluso nello ZIP. Nel frattempo usa lo screenshot Android.':'Apri la Mini App dal bot Telegram per abilitare il salvataggio. Per ora usa lo screenshot Android.';
- }
- box.append(head,status,actions,preview);document.body.appendChild(box);
- head.querySelector('button').onclick=closeSaveSheet;
- return canSend?()=>primary.onclick():null;
-}
-async function downloadArt(choice){
- if(exportInProgress)return;
- captureQuality=captureProfiles[choice]?choice:'hd';exportInProgress=true;hideExportDock();
- showLoader('PREPARAZIONE PNG',10000);setRenderProgress(0);
- try{
-  const blob=await renderExportPNG();
-  hideLoader();const sendImmediately=makeSaveSheet(blob,imageFileName());
-  // One tap on Salva PNG both renders and delivers; leave Retry if network or bot rejects it.
-  if(sendImmediately)await sendImmediately();
- }catch(e){hideLoader();showToast('Immagine non creata: '+(e?.message||e));}
- finally{exportInProgress=false;}
-}
-
-
-// v4.6.5 — Export entirely inside Telegram: prepare first, share second.
-// The second tap is necessary so navigator.share() executes in a real Android user gesture.
-// No external browser, no Cloudflare, no bot token or automatic background uploads.
-let nativePNGBlob=null,nativePNGName='',nativePNGProcessing=false,nativeShareObjectURL=null;
-function closeNativePngSheet(){
- const modal=document.getElementById('nativePngSheet');if(modal)modal.remove();
- if(nativeShareObjectURL){URL.revokeObjectURL(nativeShareObjectURL);nativeShareObjectURL=null;}
- nativePNGBlob=null;nativePNGName='';
-}
-function presentNativePngSheet(){
- closeNativePngSheet();
- const panel=document.createElement('section');panel.className='native-png-sheet';panel.id='nativePngSheet';
- panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label','Crea immagine PNG dentro Telegram');
- panel.innerHTML=`<div class="native-png-inner">
-   <div class="native-png-head"><strong>Salva la tua opera</strong><button type="button" id="nativeClosePng" aria-label="Chiudi">×</button></div>
-   <p>Immagine PNG senza i pulsanti di Telegram. Resta tutto dentro la Mini App.</p>
-   <label class="native-quality-label" for="nativePngQuality">Qualità
-    <select id="nativePngQuality"><option value="screen">Normale</option><option value="hd">HD</option><option value="ultra">Ultra</option></select>
-   </label>
-   <button type="button" id="nativePreparePng" class="native-primary">PREPARA IMMAGINE</button>
-   <p id="nativePngStatus" class="native-png-status" aria-live="polite">Il PNG verrà creato sul telefono. Nessun caricamento su server.</p>
-   <div id="nativePngResult" hidden>
-     <img id="nativePngPreview" alt="Anteprima reale della tua opera, senza pulsanti Telegram">
-     <button type="button" id="nativeSendPng" class="native-primary" hidden>CONDIVIDI / SALVA SU ANDROID</button>
-     <button type="button" id="nativeCopyPng" class="native-secondary" hidden>COPIA IMMAGINE</button>
-     <small id="nativePngHelp">Se il tuo Telegram non supporta queste funzioni, puoi provare a tenere premuto sull'immagine. La Mini App non può scegliere da sola la cartella Android.</small>
-   </div>
-  </div>`;
- document.body.appendChild(panel);
- panel.querySelector('#nativeClosePng').onclick=closeNativePngSheet;
- panel.querySelector('#nativePngQuality').value=captureQuality;
- panel.querySelector('#nativePreparePng').onclick=prepareNativePNG;
-}
-async function prepareNativePNG(){
- if(nativePNGProcessing)return;
- const box=document.getElementById('nativePngSheet');if(!box)return;
- captureQuality=box.querySelector('#nativePngQuality').value;
- try{localStorage.setItem('fae-export-quality',captureQuality);}catch(_){}
- const prepare=box.querySelector('#nativePreparePng');const status=box.querySelector('#nativePngStatus');
- const result=box.querySelector('#nativePngResult');
- nativePNGProcessing=true;prepare.disabled=true;prepare.textContent='CREAZIONE IN CORSO…';
- status.textContent='Sto elaborando il PNG alla qualità scelta…';
- result.hidden=true;
- try{
-  showLoader('CREAZIONE PNG',10000);setRenderProgress(0);
-  const blob=await renderExportPNG();
-  hideLoader();
-  if(!document.getElementById('nativePngSheet'))return;
-  if(nativeShareObjectURL)URL.revokeObjectURL(nativeShareObjectURL);
-  nativeShareObjectURL=URL.createObjectURL(blob);
-  nativePNGBlob=blob;nativePNGName=imageFileName();
-  const preview=box.querySelector('#nativePngPreview');preview.src=nativeShareObjectURL;
-  result.hidden=false;
-  const pngFile=new File([blob],nativePNGName,{type:'image/png'});
-  const supportShare=typeof navigator.share==='function'&&(!navigator.canShare||(()=>{try{return navigator.canShare({files:[pngFile]});}catch(_){return false;}})());
-  const sendButton=box.querySelector('#nativeSendPng');sendButton.hidden=!supportShare;
-  if(supportShare){
-   // Keep direct user gesture: don't await anything before calling navigator.share.
-   sendButton.onclick=()=>{
-    let promise;
-    try{promise=navigator.share({files:[pngFile],title:'Fractal Art Explorer'});}catch(err){status.textContent='Android non ha aperto la condivisione: '+(err.message||err);return;}
-    Promise.resolve(promise).then(()=>{status.textContent='Condivisione terminata. Verifica dove hai scelto di salvare il file.';}).catch(err=>{
-      if(err?.name!=='AbortError')status.textContent='Condivisione file non consentita da questa versione di Telegram. Puoi provare Copia immagine o l’anteprima.';
-    });
-   };
-  }
-  const copyButton=box.querySelector('#nativeCopyPng');
-  const supportCopy=!!navigator.clipboard?.write&&typeof ClipboardItem==='function';
-  copyButton.hidden=!supportCopy;
-  if(supportCopy){
-   copyButton.onclick=()=>{
-    let promise;
-    try{promise=navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);}catch(err){status.textContent='Copia non disponibile: '+(err.message||err);return;}
-    Promise.resolve(promise).then(()=>{status.textContent='PNG copiato. Puoi tentare di incollarlo in una chat Telegram.';}).catch(()=>{status.textContent='Telegram non autorizza la copia immagine in questa WebView.';});
-   };
-  }
-  status.textContent=supportShare?'PNG pronto. Tocca CONDIVIDI / SALVA e scegli un’app di destinazione.':
-   supportCopy?'PNG pronto. Qui puoi tentare COPIA IMMAGINE. La condivisione file non è supportata.':
-    'PNG pronto nell’anteprima. Questa WebView non supporta la condivisione o copia dei file; non posso garantire il salvataggio locale.';
- }catch(err){hideLoader();status.textContent='Non sono riuscito a creare il PNG: '+(err?.message||err);}
- finally{nativePNGProcessing=false;if(document.getElementById('nativePngSheet')){prepare.disabled=false;prepare.textContent='RIGENERA PNG';}}
-}
-
 function randomFractal(){let list=catalog.filter(f=>f.category!=='three');selectFormula(list[Math.floor(Math.random()*list.length)].id);}
 function bindRange(id,fn){$(id).addEventListener('input',e=>fn(+e.target.value));}
 function setupInteractions(){
  $('formulaList').addEventListener('click',e=>{let b=e.target.closest('[data-id]');if(b){selectFormula(b.dataset.id);$('library').classList.remove('open');}});
  $('categoryTabs').addEventListener('click',e=>{let b=e.target.closest('[data-category]');if(!b)return;category=b.dataset.category;document.querySelectorAll('.cat-tab').forEach(x=>x.classList.toggle('active',x===b));renderLibrary();});$('searchFormula').addEventListener('input',renderLibrary);
  bindRange('iterations',v=>{iterations=v;$('iterationsValue').value=v;scheduleDraw();});bindRange('power',v=>{power=v;$('powerValue').value=v.toFixed(1);scheduleDraw();});bindRange('juliaReal',v=>{juliaReal=v;$('juliaRealValue').value=v.toFixed(2);scheduleDraw();});bindRange('juliaImag',v=>{juliaImag=v;$('juliaImagValue').value=v.toFixed(3);scheduleDraw();});bindRange('quality',v=>{quality=v/100;$('qualityValue').value=v+'%';scheduleDraw();});bindRange('threePower',v=>{$('threePowerValue').value=v;if(renderer3d)renderer3d.power=v;scheduleDraw();});bindRange('threeDetail',v=>{$('threeDetailValue').value=v;if(renderer3d)renderer3d.detail=v;scheduleDraw();});
- $('palette').onchange=e=>{palette=e.target.value;scheduleDraw();};$('paletteCycle').onclick=()=>{let list=[...$('palette').options].map(o=>o.value),i=list.indexOf(palette);palette=list[(i+1)%list.length];$('palette').value=palette;scheduleDraw();};$('preset').onchange=e=>applyPreset(+e.target.value);
+ $('palette').onchange=e=>{palette=e.target.value;syncPaletteButtons();scheduleDraw();};$('paletteCycle').onclick=()=>{let list=[...$('palette').options].map(o=>o.value),i=list.indexOf(palette);palette=list[(i+1)%list.length];$('palette').value=palette;syncPaletteButtons();scheduleDraw();};$('preset').onchange=e=>applyPreset(+e.target.value);
  $('resetBtn').onclick=resetView;$('zoomIn').onclick=()=>zoom(.7);$('zoomOut').onclick=()=>zoom(1.4);$('deepZoomBtn').onclick=()=>setDeepMode(!deepEnabled);$('deepPrecision').onchange=e=>setDeepPrecision(+e.target.value);$('randomBtn').onclick=randomFractal;$('favoriteBtn').onclick=toggleFavorite;$('formulaInfoBtn').onclick=showFormulaInfo;$('highQualityBtn').onclick=()=>is3d?draw3d(true):draw2d(true);$('randomJulia').onclick=()=>{juliaReal=+(Math.random()*1.2-.6).toFixed(3);juliaImag=+(Math.random()*1.2-.6).toFixed(3);$('juliaReal').value=juliaReal;$('juliaImag').value=juliaImag;$('juliaRealValue').value=juliaReal.toFixed(2);$('juliaImagValue').value=juliaImag.toFixed(3);selectFormula('julia');};
- $('fullscreenBtn').onclick=()=>artOnly?toggleArtOnly(false):startScreenshotMode();
- $('qualityMenuBtn').onclick=startScreenshotMode;
- $('nativeShareBtn').onclick=presentNativePngSheet;
- $('exportDockButton').onclick=startScreenshotMode;
- $('saveQuality').onchange=e=>{captureQuality=e.target.value;try{localStorage.setItem('fae-export-quality',captureQuality);}catch(_){}};
- $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>La tua arte, nella Galleria</h2><p>Usa ⇧ PNG per ottenere un file pulito con la condivisione Android, quando supportata. Oppure 📷 FOTO per lo screenshot: Telegram può mostrare i suoi pulsanti flottanti e potrebbe servire ritagliare la foto in Galleria.</p><p>Quando la tela è nitida e il breve avviso scompare, premi contemporaneamente <b>Accensione + Volume giù</b> sul telefono. Android salva la foto nella Galleria, cartella Screenshots.</p><p>Un dito sposta la tela; due dita ingrandiscono e ruotano. Per uscire: Indietro, Esc o pressione prolungata nell’angolo superiore destro.</p>';openModal();};
+ $('fullscreenBtn').onclick=()=>toggleArtOnly();
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
  $('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal();};
  $('openLibrary').onclick=()=>$('library').classList.add('open');$('closeLibrary').onclick=()=>$('library').classList.remove('open');$('collapseControls').onclick=()=>{$('controlPanel').classList.toggle('collapsed');};
  const pointerDown=e=>{
   if(viewportAnchor){viewportAnchor=null;clearTimeout(viewportReleaseTimer);clearTimeout(fullscreenResizeTimer);}
-  if(e.target.closest('button,a,input,select,.export-dock,.save-sheet'))return;
+  if(e.target.closest('button,a,input,select'))return;
   if(e.pointerType==='mouse'&&e.button!==0)return;
   if(pinch)return;
   armInvisibleExit(e);stage.setPointerCapture?.(e.pointerId);
@@ -507,7 +251,7 @@ function setupInteractions(){
   }
   scheduleDraw();updateHUD();
  };
- const pointerUp=e=>{if(!drag||drag.pointerId!==e.pointerId)return;if(artOnly&&!drag.moved&&!pinch)showExportDock(4000);disarmInvisibleExit();drag=null;};
+ const pointerUp=e=>{if(!drag||drag.pointerId!==e.pointerId)return;disarmInvisibleExit();drag=null;};
  stage.addEventListener('pointerdown',pointerDown);
  stage.addEventListener('pointermove',pointerMove);
  stage.addEventListener('pointerup',pointerUp);
@@ -523,6 +267,15 @@ function setupInteractions(){
  window.visualViewport?.addEventListener('resize',()=>{if(viewportAnchor)triggerFullscreenResize();});
 }
 
+function setupPaletteChooser(){
+ const entries=Object.entries(window.FRACTAL_PALETTES||{});
+ const select=$('palette'),strip=$('paletteStrip');
+ select.replaceChildren(...entries.map(([key,v])=>new Option(v.name,key)));
+ strip.innerHTML=entries.map(([key,v])=>`<button class="palette-chip" type="button" data-palette="${key}" aria-label="Colori ${v.name}"><i class="swatch" style="background:linear-gradient(105deg,${v.stops.join(',')})"></i><span>${v.name}</span></button>`).join('');
+ $('paletteCycle').title='Palette successiva';
+ $('colorSurpriseBtn').onclick=()=>{const values=entries.map(e=>e[0]).filter(key=>key!==palette);palette=values[Math.floor(Math.random()*values.length)];select.value=palette;syncPaletteButtons();scheduleDraw();};
+}
+function syncPaletteButtons(){document.querySelectorAll('.palette-chip').forEach(b=>b.classList.toggle('active',b.dataset.palette===palette));}
 let activeArtId='violet-reverie',artFilter='all';
 function renderArtCards(){
  const list=(window.FRACTAL_ART_PRESETS||[]).filter(p=>artFilter==='all'||p.mood===artFilter);
@@ -547,7 +300,7 @@ function applyArtPreset(id){
  $('favoriteBtn').textContent=favorites.has(active.id)?'★':'♡';
  document.body.dataset.artMood=p.mood;
  renderArtCards();
- document.querySelectorAll('.palette-chip').forEach(b=>b.classList.toggle('active',b.dataset.palette===palette));
+ syncPaletteButtons();
  $('deepZoomBtn').classList.remove('active');$('deepZoomBtn').setAttribute('aria-pressed','false');
  scheduleDraw();updateHUD();
 }
@@ -561,9 +314,9 @@ function initArtExplorer(){
  $('resetBtn').onclick=()=>applyArtPreset(activeArtId||'violet-reverie');
  $('favoriteBtn').onclick=()=>toggleFavorite();
  $('formulaInfoBtn').onclick=()=>{const p=(window.FRACTAL_ART_PRESETS||[]).find(x=>x.id===activeArtId);if(!p)return;$('modalContent').innerHTML=`<div class="modal-kicker">${p.subtitle}</div><h2>${p.title}</h2><p>Una piccola finestra su un mondo infinito. Lasciati guidare dalle forme, cambia colore e segui i dettagli: ogni viaggio è unico.</p>`;openModal();};
- $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>La tua arte, nella Galleria</h2><p>Usa ⇧ PNG per ottenere un file pulito con la condivisione Android, quando supportata. Oppure 📷 FOTO per lo screenshot: Telegram può mostrare i suoi pulsanti flottanti e potrebbe servire ritagliare la foto in Galleria.</p><p>Quando la tela è nitida e il breve avviso scompare, premi contemporaneamente <b>Accensione + Volume giù</b> sul telefono. Android salva la foto nella Galleria, cartella Screenshots.</p><p>Un dito sposta la tela; due dita ingrandiscono e ruotano. Per uscire: Indietro, Esc o pressione prolungata nell’angolo superiore destro.</p>';openModal();};
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
 }
 
-function start(){try{const saved=localStorage.getItem('fae-export-quality');if(captureProfiles[saved])captureQuality=saved;}catch(_){}$('saveQuality').value=captureQuality;initWorker();try{renderer3d=new FractInt3D(canvas3d);if(!renderer3d.ok){$('engineStatus').textContent='WEBGL2 NON DISPONIBILE';}}catch(e){console.warn(e);$('engineStatus').textContent='GPU ERROR';}setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{if(viewportAnchor&&e?.isStateStable)triggerFullscreenResize();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js').catch(()=>{});}
+function start(){setupPaletteChooser();initWorker();try{renderer3d=new FractInt3D(canvas3d);if(!renderer3d.ok){$('engineStatus').textContent='WEBGL2 NON DISPONIBILE';}}catch(e){console.warn(e);$('engineStatus').textContent='GPU ERROR';}setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{if(viewportAnchor&&e?.isStateStable)triggerFullscreenResize();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js').catch(()=>{});}
 start();
 })();

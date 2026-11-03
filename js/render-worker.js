@@ -1,7 +1,15 @@
 /* FractInt CPU renderer. All heavy 2D calculations run off the UI thread. */
+importScripts('palettes.js');
 let newestJob=0;
 self.onmessage=(event)=>{const cfg=event.data;newestJob=cfg.job;render(cfg).catch(err=>self.postMessage({job:cfg.job,error:String(err)}));};
 const palettes={cosmic:t=>[16+220*t,18+105*Math.sin(t*5.5)**2,45+205*(1-t)],fire:t=>[255*Math.min(1,t*2.2),215*Math.max(0,t-.25),35+65*(1-t)],ocean:t=>[10+20*t,35+190*t,70+185*t],aurora:t=>[35+175*Math.sin(t*3.3)**2,25+205*t,100+145*(1-t)],mono:t=>[255*t,255*t,255*t],candy:t=>[150+100*Math.sin(t*8),75+150*Math.sin(t*5+1),190+65*Math.cos(t*7)],gold:t=>[80+175*t,45+170*t,12+75*t],neon:t=>[40+210*t,220*(1-t),100+150*Math.sin(t*6)**2]};
+// Nuove palette a gradienti cromatici a cinque stop, campionati a precisione piena.
+const toRGB=hex=>[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
+for(const [key,info] of Object.entries(self.FRACTAL_PALETTES||{})){
+ if(palettes[key])continue; // Le otto palette originali conservano il loro rendering.
+ const stops=info.stops.map(toRGB);
+ palettes[key]=t=>{const f=Math.max(0,Math.min(.999999,Number.isFinite(t)?t:0))*4,i=Math.floor(f),u=(f-i)*(f-i)*(3-2*(f-i)),a=stops[i],b=stops[i+1];return [a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u,a[2]+(b[2]-a[2])*u];};
+}
 function smooth(i,r){if(i===0)return 0;return i+1-Math.log2(Math.max(1e-12,Math.log2(Math.sqrt(r))));}
 function complexPower(x,y,p){const r=Math.hypot(x,y),a=Math.atan2(y,x);const rp=Math.pow(r,p);return [rp*Math.cos(a*p),rp*Math.sin(a*p)];}
 function iterate(kind,x,y,cfg){let zx=0,zy=0,cx=x,cy=y,prevx=0,prevy=0,iter=0,root=0;const max=cfg.iterations,p=cfg.power||2,cr=cfg.juliaReal,ci=cfg.juliaImag;

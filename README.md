@@ -1,20 +1,19 @@
-# Fractal Art Explorer 4.6.5 — solo Telegram
+# Fractal Art Explorer — v4.6.6 Arte & Colori
 
-Basato sulla versione 4.6.3 (e sulla famiglia 4.6), **non sulla 4.7 o sulla variante browser esterno**.
-Mantiene splash, 71 forme, 67 composizioni e i controlli dei frattali.
+Mini App Telegram statica, pronta per GitHub Pages. Basata sulla **v4.6.5** della famiglia v4.6, **non sulla v4.7**.
 
-## Immagine pulita senza uscire dalla Mini App
-
-- Tocca **⇧ PNG** nella barra sotto l’immagine.
-- Scegli Normale, HD o Ultra e tocca **Prepara immagine**.
-- Se la WebView Android lo supporta, compare **Condividi / Salva su Android**. Il pulsante apre il pannello nativo Android con un `File` PNG preparato in memoria; scegli Telegram, Files o un’app che offra Salva.
-- Se il pannello non è supportato, l’app mostra solo le opzioni realmente disponibili (Copia immagine se permessa, e anteprima). **Il salvataggio non è garantito** su tutte le versioni di Telegram Android.
-- Nessun browser esterno, account Cloudflare, servizio privato, invio dati o token del bot.
-
-## Screenshot Android
-
-Il tasto **📷 FOTO** resta disponibile. Telegram può mantenere i pulsanti nativi `×`, `⋮` e la freccia sopra la Mini App anche in modalità fullscreen. **Non esiste un'API Telegram per nasconderli completamente**; lo screenshot di sistema li può includere. Per eliminarli dallo screenshot occorre ritagliare dalla Galleria, o usare il flusso PNG qui sopra se supportato.
+## Questa release
+- **Rimossi definitivamente** pulsanti, pannelli, JavaScript e stili per PNG, download, condivisione, screenshot e servizi di trasferimento immagini.
+- **32 palette** colori, con anteprime cromatiche visibili e pulsante **✦ COLORI** per cambiare atmosfera.
+- **123 opere precaricate** (67 originali + 56 nuove composizioni). Ogni opera richiama una vera formula e salva inquadratura, palette e dettagli specifici.
+- Mantenute le **71 formule** del catalogo, il motore CPU con worker, il WebGL2 3D, le gesture con due dita, il deep zoom, il fullscreen solo frattale e lo splash animato di cinque secondi.
+- Le nuove palette funzionano sia nel renderer 2D sia nel renderer WebGL2 3D.
 
 ## Installazione
+Estrai lo ZIP e carica **tutti** i file, incluso `js/palettes.js`, nella root del repository servito da GitHub Pages (`index.html` nella root). Il service worker usa una nuova chiave cache: ricarica o chiudi e riapri la Mini App dopo la pubblicazione.
 
-Estrai lo ZIP e copia nella root di GitHub Pages tutti i file (inclusi JS e service worker). Riavvia la Mini App dopo il deployment. Il service worker ha nome cache nuovo.
+## Funzioni principali
+Scorri i colori sotto la tela; tocca un'opera dalla collezione. Trascina per spostare; usa due dita per zoom e rotazione, ⛶ per la vista immersiva, ↺ per ripristinare l'inquadratura, ✧ per un'opera casuale e ✦ COLORI per una nuova palette. Nessuna funzione di esportazione o cattura.
+
+## Note tecniche
+L'app resta **completamente nel browser interno Telegram**. Il fullscreen riguarda il contenuto HTML della Mini App; eventuali pulsanti nativi sovrapposti di Telegram non sono controllabili dal codice della pagina.
