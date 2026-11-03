@@ -196,6 +196,37 @@ function showExportDock(duration=4800){if(!artOnly||exportInProgress)return;
  if(duration)exportDockTimer=setTimeout(()=>d.classList.add('dock-idle'),duration);
 }
 function hideExportDock(){clearTimeout(exportDockTimer);$('exportDock').hidden=true;}
+
+// Screenshot semplice: usiamo la cattura nativa Android, non Blob o popup bloccati dalla WebView Telegram.
+// Il sistema Android salva direttamente nella cartella Screenshots, senza token né backend.
+let screenshotHintTimer=0;
+function removeScreenshotHint(){
+ clearTimeout(screenshotHintTimer);
+ const hint=document.getElementById('screenCaptureHint');
+ if(hint)hint.remove();
+}
+function showScreenshotHint(){
+ if(!artOnly)return;
+ let hint=document.getElementById('screenCaptureHint');
+ if(!hint){
+  hint=document.createElement('div');
+  hint.id='screenCaptureHint';
+  hint.setAttribute('role','status');
+  hint.setAttribute('aria-live','polite');
+  hint.innerHTML='<strong>📷 Screenshot pronto</strong><span>Premi Accensione + Volume giù insieme</span><small>La foto va nella Galleria → Screenshots</small>';
+  document.body.appendChild(hint);
+ }
+ hint.hidden=false;hint.classList.remove('vanish');
+ clearTimeout(screenshotHintTimer);
+ screenshotHintTimer=setTimeout(()=>{hint.classList.add('vanish');screenshotHintTimer=setTimeout(()=>{if(hint.classList.contains('vanish'))hint.remove();},500);},3800);
+}
+function startScreenshotMode(){
+ if(!artOnly){
+  void toggleArtOnly(true);
+  setTimeout(showScreenshotHint,850);
+ }else showScreenshotHint();
+}
+
 async function toggleArtOnly(force){
  const next=typeof force==='boolean'?force:!artOnly,tg=window.Telegram?.WebApp;if(next===artOnly)return;
  const token=++fullscreenGeneration;
@@ -217,7 +248,7 @@ async function toggleArtOnly(force){
   }catch(e){console.warn('Fullscreen API:',e);}
   if(tg?.BackButton){tgBackHandler=()=>toggleArtOnly(false);tg.BackButton.onClick(tgBackHandler);tg.BackButton.show();}
  }else{
-  hideExportDock();
+  removeScreenshotHint();hideExportDock();
   if(tg?.BackButton){try{tg.BackButton.hide();if(tgBackHandler)tg.BackButton.offClick?.(tgBackHandler);}catch(_){}tgBackHandler=null;}
   try{if(tg?.isFullscreen&&typeof tg.exitFullscreen==='function')tg.exitFullscreen();else if(document.fullscreenElement&&document.exitFullscreen)await document.exitFullscreen();}catch(e){console.warn('Fullscreen exit:',e);}
   tg?.setHeaderColor?.('#0b1020');tg?.setBackgroundColor?.('#080b16');
@@ -363,11 +394,11 @@ function setupInteractions(){
  bindRange('iterations',v=>{iterations=v;$('iterationsValue').value=v;scheduleDraw();});bindRange('power',v=>{power=v;$('powerValue').value=v.toFixed(1);scheduleDraw();});bindRange('juliaReal',v=>{juliaReal=v;$('juliaRealValue').value=v.toFixed(2);scheduleDraw();});bindRange('juliaImag',v=>{juliaImag=v;$('juliaImagValue').value=v.toFixed(3);scheduleDraw();});bindRange('quality',v=>{quality=v/100;$('qualityValue').value=v+'%';scheduleDraw();});bindRange('threePower',v=>{$('threePowerValue').value=v;if(renderer3d)renderer3d.power=v;scheduleDraw();});bindRange('threeDetail',v=>{$('threeDetailValue').value=v;if(renderer3d)renderer3d.detail=v;scheduleDraw();});
  $('palette').onchange=e=>{palette=e.target.value;scheduleDraw();};$('paletteCycle').onclick=()=>{let list=[...$('palette').options].map(o=>o.value),i=list.indexOf(palette);palette=list[(i+1)%list.length];$('palette').value=palette;scheduleDraw();};$('preset').onchange=e=>applyPreset(+e.target.value);
  $('resetBtn').onclick=resetView;$('zoomIn').onclick=()=>zoom(.7);$('zoomOut').onclick=()=>zoom(1.4);$('deepZoomBtn').onclick=()=>setDeepMode(!deepEnabled);$('deepPrecision').onchange=e=>setDeepPrecision(+e.target.value);$('randomBtn').onclick=randomFractal;$('favoriteBtn').onclick=toggleFavorite;$('formulaInfoBtn').onclick=showFormulaInfo;$('highQualityBtn').onclick=()=>is3d?draw3d(true):draw2d(true);$('randomJulia').onclick=()=>{juliaReal=+(Math.random()*1.2-.6).toFixed(3);juliaImag=+(Math.random()*1.2-.6).toFixed(3);$('juliaReal').value=juliaReal;$('juliaImag').value=juliaImag;$('juliaRealValue').value=juliaReal.toFixed(2);$('juliaImagValue').value=juliaImag.toFixed(3);selectFormula('julia');};
- $('fullscreenBtn').onclick=()=>toggleArtOnly();
- $('qualityMenuBtn').onclick=()=>downloadArt($('saveQuality').value);
- $('exportDockButton').onclick=()=>downloadArt($('saveQuality').value);
+ $('fullscreenBtn').onclick=()=>artOnly?toggleArtOnly(false):startScreenshotMode();
+ $('qualityMenuBtn').onclick=startScreenshotMode;
+ $('exportDockButton').onclick=startScreenshotMode;
  $('saveQuality').onchange=e=>{captureQuality=e.target.value;try{localStorage.setItem('fae-export-quality',captureQuality);}catch(_){}};
- $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora e salva</h2><p>Due dita: avvicina, allontana e ruota contemporaneamente la mappa. Un dito: sposta la vista.</p><p>Premi ⛶ per la tela immersiva. In basso scegli Normale, HD o Ultra e premi Salva. Quando l’immagine è pronta usa “Invia alla chat del bot” (dopo aver configurato il servizio HTTPS) per ricevere il PNG originale in Telegram. In alternativa fai uno screenshot Android.</p><p>Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo superiore destro.</p>';openModal();};
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>La tua arte, nella Galleria</h2><p>Inquadra il frattale. Premi 📷 FOTO oppure ⛶: l’immagine si apre a tutto schermo, senza scritte.</p><p>Quando la tela è nitida e il breve avviso scompare, premi contemporaneamente <b>Accensione + Volume giù</b> sul telefono. Android salva la foto nella Galleria, cartella Screenshots.</p><p>Un dito sposta la tela; due dita ingrandiscono e ruotano. Per uscire: Indietro, Esc o pressione prolungata nell’angolo superiore destro.</p>';openModal();};
  $('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal();};
  $('openLibrary').onclick=()=>$('library').classList.add('open');$('closeLibrary').onclick=()=>$('library').classList.remove('open');$('collapseControls').onclick=()=>{$('controlPanel').classList.toggle('collapsed');};
  const pointerDown=e=>{
@@ -445,7 +476,7 @@ function initArtExplorer(){
  $('resetBtn').onclick=()=>applyArtPreset(activeArtId||'violet-reverie');
  $('favoriteBtn').onclick=()=>toggleFavorite();
  $('formulaInfoBtn').onclick=()=>{const p=(window.FRACTAL_ART_PRESETS||[]).find(x=>x.id===activeArtId);if(!p)return;$('modalContent').innerHTML=`<div class="modal-kicker">${p.subtitle}</div><h2>${p.title}</h2><p>Una piccola finestra su un mondo infinito. Lasciati guidare dalle forme, cambia colore e segui i dettagli: ogni viaggio è unico.</p>`;openModal();};
- $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Entra nell’infinito</h2><p>Trascina con un dito; con due dita puoi ingrandire, spostare e ruotare la mappa. Usa ⛶ per la tela immersiva.</p><p>Se vuoi un PNG, scegli la qualità, premi Salva e invia il documento alla chat del bot (servizio HTTPS necessario). Per lo screenshot usa i tasti del telefono.</p>';openModal();};
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>La tua arte, nella Galleria</h2><p>Inquadra il frattale. Premi 📷 FOTO oppure ⛶: l’immagine si apre a tutto schermo, senza scritte.</p><p>Quando la tela è nitida e il breve avviso scompare, premi contemporaneamente <b>Accensione + Volume giù</b> sul telefono. Android salva la foto nella Galleria, cartella Screenshots.</p><p>Un dito sposta la tela; due dita ingrandiscono e ruotano. Per uscire: Indietro, Esc o pressione prolungata nell’angolo superiore destro.</p>';openModal();};
 }
 
 function start(){try{const saved=localStorage.getItem('fae-export-quality');if(captureProfiles[saved])captureQuality=saved;}catch(_){}$('saveQuality').value=captureQuality;initWorker();try{renderer3d=new FractInt3D(canvas3d);if(!renderer3d.ok){$('engineStatus').textContent='WEBGL2 NON DISPONIBILE';}}catch(e){console.warn(e);$('engineStatus').textContent='GPU ERROR';}setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{if(viewportAnchor&&e?.isStateStable)triggerFullscreenResize();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js').catch(()=>{});}
