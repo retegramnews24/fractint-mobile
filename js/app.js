@@ -386,6 +386,90 @@ async function downloadArt(choice){
  finally{exportInProgress=false;}
 }
 
+
+// v4.6.5 — Export entirely inside Telegram: prepare first, share second.
+// The second tap is necessary so navigator.share() executes in a real Android user gesture.
+// No external browser, no Cloudflare, no bot token or automatic background uploads.
+let nativePNGBlob=null,nativePNGName='',nativePNGProcessing=false,nativeShareObjectURL=null;
+function closeNativePngSheet(){
+ const modal=document.getElementById('nativePngSheet');if(modal)modal.remove();
+ if(nativeShareObjectURL){URL.revokeObjectURL(nativeShareObjectURL);nativeShareObjectURL=null;}
+ nativePNGBlob=null;nativePNGName='';
+}
+function presentNativePngSheet(){
+ closeNativePngSheet();
+ const panel=document.createElement('section');panel.className='native-png-sheet';panel.id='nativePngSheet';
+ panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label','Crea immagine PNG dentro Telegram');
+ panel.innerHTML=`<div class="native-png-inner">
+   <div class="native-png-head"><strong>Salva la tua opera</strong><button type="button" id="nativeClosePng" aria-label="Chiudi">×</button></div>
+   <p>Immagine PNG senza i pulsanti di Telegram. Resta tutto dentro la Mini App.</p>
+   <label class="native-quality-label" for="nativePngQuality">Qualità
+    <select id="nativePngQuality"><option value="screen">Normale</option><option value="hd">HD</option><option value="ultra">Ultra</option></select>
+   </label>
+   <button type="button" id="nativePreparePng" class="native-primary">PREPARA IMMAGINE</button>
+   <p id="nativePngStatus" class="native-png-status" aria-live="polite">Il PNG verrà creato sul telefono. Nessun caricamento su server.</p>
+   <div id="nativePngResult" hidden>
+     <img id="nativePngPreview" alt="Anteprima reale della tua opera, senza pulsanti Telegram">
+     <button type="button" id="nativeSendPng" class="native-primary" hidden>CONDIVIDI / SALVA SU ANDROID</button>
+     <button type="button" id="nativeCopyPng" class="native-secondary" hidden>COPIA IMMAGINE</button>
+     <small id="nativePngHelp">Se il tuo Telegram non supporta queste funzioni, puoi provare a tenere premuto sull'immagine. La Mini App non può scegliere da sola la cartella Android.</small>
+   </div>
+  </div>`;
+ document.body.appendChild(panel);
+ panel.querySelector('#nativeClosePng').onclick=closeNativePngSheet;
+ panel.querySelector('#nativePngQuality').value=captureQuality;
+ panel.querySelector('#nativePreparePng').onclick=prepareNativePNG;
+}
+async function prepareNativePNG(){
+ if(nativePNGProcessing)return;
+ const box=document.getElementById('nativePngSheet');if(!box)return;
+ captureQuality=box.querySelector('#nativePngQuality').value;
+ try{localStorage.setItem('fae-export-quality',captureQuality);}catch(_){}
+ const prepare=box.querySelector('#nativePreparePng');const status=box.querySelector('#nativePngStatus');
+ const result=box.querySelector('#nativePngResult');
+ nativePNGProcessing=true;prepare.disabled=true;prepare.textContent='CREAZIONE IN CORSO…';
+ status.textContent='Sto elaborando il PNG alla qualità scelta…';
+ result.hidden=true;
+ try{
+  showLoader('CREAZIONE PNG',10000);setRenderProgress(0);
+  const blob=await renderExportPNG();
+  hideLoader();
+  if(!document.getElementById('nativePngSheet'))return;
+  if(nativeShareObjectURL)URL.revokeObjectURL(nativeShareObjectURL);
+  nativeShareObjectURL=URL.createObjectURL(blob);
+  nativePNGBlob=blob;nativePNGName=imageFileName();
+  const preview=box.querySelector('#nativePngPreview');preview.src=nativeShareObjectURL;
+  result.hidden=false;
+  const pngFile=new File([blob],nativePNGName,{type:'image/png'});
+  const supportShare=typeof navigator.share==='function'&&(!navigator.canShare||(()=>{try{return navigator.canShare({files:[pngFile]});}catch(_){return false;}})());
+  const sendButton=box.querySelector('#nativeSendPng');sendButton.hidden=!supportShare;
+  if(supportShare){
+   // Keep direct user gesture: don't await anything before calling navigator.share.
+   sendButton.onclick=()=>{
+    let promise;
+    try{promise=navigator.share({files:[pngFile],title:'Fractal Art Explorer'});}catch(err){status.textContent='Android non ha aperto la condivisione: '+(err.message||err);return;}
+    Promise.resolve(promise).then(()=>{status.textContent='Condivisione terminata. Verifica dove hai scelto di salvare il file.';}).catch(err=>{
+      if(err?.name!=='AbortError')status.textContent='Condivisione file non consentita da questa versione di Telegram. Puoi provare Copia immagine o l’anteprima.';
+    });
+   };
+  }
+  const copyButton=box.querySelector('#nativeCopyPng');
+  const supportCopy=!!navigator.clipboard?.write&&typeof ClipboardItem==='function';
+  copyButton.hidden=!supportCopy;
+  if(supportCopy){
+   copyButton.onclick=()=>{
+    let promise;
+    try{promise=navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);}catch(err){status.textContent='Copia non disponibile: '+(err.message||err);return;}
+    Promise.resolve(promise).then(()=>{status.textContent='PNG copiato. Puoi tentare di incollarlo in una chat Telegram.';}).catch(()=>{status.textContent='Telegram non autorizza la copia immagine in questa WebView.';});
+   };
+  }
+  status.textContent=supportShare?'PNG pronto. Tocca CONDIVIDI / SALVA e scegli un’app di destinazione.':
+   supportCopy?'PNG pronto. Qui puoi tentare COPIA IMMAGINE. La condivisione file non è supportata.':
+    'PNG pronto nell’anteprima. Questa WebView non supporta la condivisione o copia dei file; non posso garantire il salvataggio locale.';
+ }catch(err){hideLoader();status.textContent='Non sono riuscito a creare il PNG: '+(err?.message||err);}
+ finally{nativePNGProcessing=false;if(document.getElementById('nativePngSheet')){prepare.disabled=false;prepare.textContent='RIGENERA PNG';}}
+}
+
 function randomFractal(){let list=catalog.filter(f=>f.category!=='three');selectFormula(list[Math.floor(Math.random()*list.length)].id);}
 function bindRange(id,fn){$(id).addEventListener('input',e=>fn(+e.target.value));}
 function setupInteractions(){
@@ -396,9 +480,10 @@ function setupInteractions(){
  $('resetBtn').onclick=resetView;$('zoomIn').onclick=()=>zoom(.7);$('zoomOut').onclick=()=>zoom(1.4);$('deepZoomBtn').onclick=()=>setDeepMode(!deepEnabled);$('deepPrecision').onchange=e=>setDeepPrecision(+e.target.value);$('randomBtn').onclick=randomFractal;$('favoriteBtn').onclick=toggleFavorite;$('formulaInfoBtn').onclick=showFormulaInfo;$('highQualityBtn').onclick=()=>is3d?draw3d(true):draw2d(true);$('randomJulia').onclick=()=>{juliaReal=+(Math.random()*1.2-.6).toFixed(3);juliaImag=+(Math.random()*1.2-.6).toFixed(3);$('juliaReal').value=juliaReal;$('juliaImag').value=juliaImag;$('juliaRealValue').value=juliaReal.toFixed(2);$('juliaImagValue').value=juliaImag.toFixed(3);selectFormula('julia');};
  $('fullscreenBtn').onclick=()=>artOnly?toggleArtOnly(false):startScreenshotMode();
  $('qualityMenuBtn').onclick=startScreenshotMode;
+ $('nativeShareBtn').onclick=presentNativePngSheet;
  $('exportDockButton').onclick=startScreenshotMode;
  $('saveQuality').onchange=e=>{captureQuality=e.target.value;try{localStorage.setItem('fae-export-quality',captureQuality);}catch(_){}};
- $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>La tua arte, nella Galleria</h2><p>Inquadra il frattale. Premi 📷 FOTO oppure ⛶: l’immagine si apre a tutto schermo, senza scritte.</p><p>Quando la tela è nitida e il breve avviso scompare, premi contemporaneamente <b>Accensione + Volume giù</b> sul telefono. Android salva la foto nella Galleria, cartella Screenshots.</p><p>Un dito sposta la tela; due dita ingrandiscono e ruotano. Per uscire: Indietro, Esc o pressione prolungata nell’angolo superiore destro.</p>';openModal();};
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>La tua arte, nella Galleria</h2><p>Usa ⇧ PNG per ottenere un file pulito con la condivisione Android, quando supportata. Oppure 📷 FOTO per lo screenshot: Telegram può mostrare i suoi pulsanti flottanti e potrebbe servire ritagliare la foto in Galleria.</p><p>Quando la tela è nitida e il breve avviso scompare, premi contemporaneamente <b>Accensione + Volume giù</b> sul telefono. Android salva la foto nella Galleria, cartella Screenshots.</p><p>Un dito sposta la tela; due dita ingrandiscono e ruotano. Per uscire: Indietro, Esc o pressione prolungata nell’angolo superiore destro.</p>';openModal();};
  $('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal();};
  $('openLibrary').onclick=()=>$('library').classList.add('open');$('closeLibrary').onclick=()=>$('library').classList.remove('open');$('collapseControls').onclick=()=>{$('controlPanel').classList.toggle('collapsed');};
  const pointerDown=e=>{
@@ -476,7 +561,7 @@ function initArtExplorer(){
  $('resetBtn').onclick=()=>applyArtPreset(activeArtId||'violet-reverie');
  $('favoriteBtn').onclick=()=>toggleFavorite();
  $('formulaInfoBtn').onclick=()=>{const p=(window.FRACTAL_ART_PRESETS||[]).find(x=>x.id===activeArtId);if(!p)return;$('modalContent').innerHTML=`<div class="modal-kicker">${p.subtitle}</div><h2>${p.title}</h2><p>Una piccola finestra su un mondo infinito. Lasciati guidare dalle forme, cambia colore e segui i dettagli: ogni viaggio è unico.</p>`;openModal();};
- $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>La tua arte, nella Galleria</h2><p>Inquadra il frattale. Premi 📷 FOTO oppure ⛶: l’immagine si apre a tutto schermo, senza scritte.</p><p>Quando la tela è nitida e il breve avviso scompare, premi contemporaneamente <b>Accensione + Volume giù</b> sul telefono. Android salva la foto nella Galleria, cartella Screenshots.</p><p>Un dito sposta la tela; due dita ingrandiscono e ruotano. Per uscire: Indietro, Esc o pressione prolungata nell’angolo superiore destro.</p>';openModal();};
+ $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>La tua arte, nella Galleria</h2><p>Usa ⇧ PNG per ottenere un file pulito con la condivisione Android, quando supportata. Oppure 📷 FOTO per lo screenshot: Telegram può mostrare i suoi pulsanti flottanti e potrebbe servire ritagliare la foto in Galleria.</p><p>Quando la tela è nitida e il breve avviso scompare, premi contemporaneamente <b>Accensione + Volume giù</b> sul telefono. Android salva la foto nella Galleria, cartella Screenshots.</p><p>Un dito sposta la tela; due dita ingrandiscono e ruotano. Per uscire: Indietro, Esc o pressione prolungata nell’angolo superiore destro.</p>';openModal();};
 }
 
 function start(){try{const saved=localStorage.getItem('fae-export-quality');if(captureProfiles[saved])captureQuality=saved;}catch(_){}$('saveQuality').value=captureQuality;initWorker();try{renderer3d=new FractInt3D(canvas3d);if(!renderer3d.ok){$('engineStatus').textContent='WEBGL2 NON DISPONIBILE';}}catch(e){console.warn(e);$('engineStatus').textContent='GPU ERROR';}setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{if(viewportAnchor&&e?.isStateStable)triggerFullscreenResize();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js').catch(()=>{});}

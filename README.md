@@ -1,19 +1,20 @@
-# Fractal Art Explorer v4.6.3 — Screenshot semplice
+# Fractal Art Explorer 4.6.5 — solo Telegram
 
-Questa versione deriva **esclusivamente dalla 4.6.2**, quindi mantiene motore, collezione, splash da cinque secondi, pinch/rotazione a due dita e fullscreen con la stessa inquadratura.
+Basato sulla versione 4.6.3 (e sulla famiglia 4.6), **non sulla 4.7 o sulla variante browser esterno**.
+Mantiene splash, 71 forme, 67 composizioni e i controlli dei frattali.
 
-## Salvare una foto da Telegram Android
+## Immagine pulita senza uscire dalla Mini App
 
-1. Apri un frattale e scegli l'inquadratura.
-2. Premi **📷 FOTO** in basso oppure il comando **⛶** in alto.
-3. Si apre la tela immersiva. Il messaggio con le istruzioni scompare automaticamente dopo pochi secondi.
-4. Aspetta che il rendering finisca e premi contemporaneamente i tasti fisici **Accensione + Volume giù**.
-5. Il telefono salva lo screenshot nella **Galleria/Google Foto → Screenshots**. Non occorre scaricare nulla da Telegram.
+- Tocca **⇧ PNG** nella barra sotto l’immagine.
+- Scegli Normale, HD o Ultra e tocca **Prepara immagine**.
+- Se la WebView Android lo supporta, compare **Condividi / Salva su Android**. Il pulsante apre il pannello nativo Android con un `File` PNG preparato in memoria; scegli Telegram, Files o un’app che offra Salva.
+- Se il pannello non è supportato, l’app mostra solo le opzioni realmente disponibili (Copia immagine se permessa, e anteprima). **Il salvataggio non è garantito** su tutte le versioni di Telegram Android.
+- Nessun browser esterno, account Cloudflare, servizio privato, invio dati o token del bot.
 
-**Importante:** per motivi di sicurezza le pagine web non possono premere i tasti o acquisire direttamente lo screenshot del sistema Android. L'app prepara soltanto una tela pulita: lo screenshot lo acquisisce Android. Non viene creato un PNG ad altissima risoluzione indipendente dallo schermo: ha la risoluzione dello schermo fisico.
+## Screenshot Android
 
-## Aggiornamento su GitHub Pages
+Il tasto **📷 FOTO** resta disponibile. Telegram può mantenere i pulsanti nativi `×`, `⋮` e la freccia sopra la Mini App anche in modalità fullscreen. **Non esiste un'API Telegram per nasconderli completamente**; lo screenshot di sistema li può includere. Per eliminarli dallo screenshot occorre ritagliare dalla Galleria, o usare il flusso PNG qui sopra se supportato.
 
-Sovrascrivi tutti i file del vecchio repository con quelli di questo ZIP (non caricare la cartella esterna). Attendi che Pages pubblichi l'aggiornamento, poi riavvia la Mini App; il nome della cache è stato aggiornato.
+## Installazione
 
-Non servono servizi Cloudflare, token Telegram, account extra o backend. Il vecchio tentativo di invio PNG al bot è stato tolto dal percorso di utilizzo e lo ZIP non contiene il servizio.
+Estrai lo ZIP e copia nella root di GitHub Pages tutti i file (inclusi JS e service worker). Riavvia la Mini App dopo il deployment. Il service worker ha nome cache nuovo.

@@ -190,3 +190,10 @@ body.art-only .visual-stage canvas#previewCanvas{object-fit:fill!important}
 #screenCaptureHint small{font:11px system-ui,sans-serif;color:#cfbfed}
 #screenCaptureHint.vanish{opacity:0}
 #screenCaptureHint[hidden]{display:none!important}
+
+/* v4.6.5 – Share PNG within Telegram; sheet stays in the WebView. */
+.native-png-sheet{position:fixed;inset:0;z-index:300000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.84);padding:22px 15px calc(22px + env(safe-area-inset-bottom,0px));overflow:auto}
+.native-png-inner{width:min(520px,100%);max-height:90dvh;overflow:auto;background:#18172c;border:1px solid #685c96;border-radius:22px;padding:18px;color:#f7f1ff;box-shadow:0 20px 65px #000a;font-family:system-ui,sans-serif}
+.native-png-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.native-png-head strong{font-size:17px}.native-png-head button{background:transparent;color:#fff;font-size:26px;border:0;padding:3px 8px}
+.native-png-inner p{font-size:13px;line-height:1.5;color:#ddd2f3}.native-quality-label{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0;color:#e8ddfa;font-size:13px}.native-quality-label select{background:#2e2946;border:1px solid #7363a0;color:#fff;border-radius:9px;padding:9px}
+.native-primary,.native-secondary{width:100%;border:0;border-radius:12px;background:#8567e4;color:white;padding:13px 10px;font-weight:700;margin:7px 0}.native-secondary{background:#34334c;border:1px solid #726b99}.native-primary:disabled{opacity:.5}.native-png-status{min-height:32px}.native-png-inner img{display:block;width:100%;max-height:34dvh;object-fit:contain;border-radius:12px;background:#000;margin:14px auto}.native-png-inner small{display:block;color:#ab9bc7;font-size:12px;line-height:1.4;margin-top:9px}.native-png-inner [hidden]{display:none!important}
