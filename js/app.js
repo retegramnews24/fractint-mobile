@@ -75,7 +75,7 @@ function overviewGood(view){
 function ensureOverviewWorker(){
  if(overviewWorker||typeof Worker==='undefined')return !!overviewWorker;
  try{
-  overviewWorker=new Worker('js/render-worker.js?v=4610');
+  overviewWorker=new Worker('js/render-worker.js?v=4611');
   overviewWorker.onmessage=e=>{
    const m=e.data;if(m.job!==overviewJob||m.progress!==undefined)return;
    overviewBusy=false;
@@ -115,14 +115,40 @@ function requestOverview(){
 
 let renderProgressTimer=0,renderHideTimer=0,renderStartedAt=0,renderEstimateMs=3500,renderHasWorkerProgress=false,renderToken=0;
 let fullscreenResizeTimer=0,fullscreenViewport=null,fullscreenPendingRender=false;
+// Quality pipeline: 1) wide preview, 2) responsive base pass, 3) quiet-time
+// supersampled refinement. Any interaction cancels the pending third pass.
+let refineTimer=0,refineSerial=0,activeRenderAutomatic=false,activeRenderHigh=false;
+function cancelRefinement(){clearTimeout(refineTimer);refineTimer=0;refineSerial++;}
+function zoomDepth(){
+ const depth=deepEnabled?Math.log2(3.2)-bigintLog2(deepScale)+deepBits:
+  Math.log2(Math.max(1,active.scale/Math.max(scale,Number.MIN_VALUE)));
+ return Math.max(0,Math.min(300,Number.isFinite(depth)?depth:0));
+}
+function detailIterations(highQuality){
+ if(!highQuality)return iterations;
+ if(!['mandelbrot','julia','multibrot','burning','buffalo','perpendicular','tricorn','celtic','phoenix','mcmullen'].includes(active.id))return iterations;
+ const depth=zoomDepth(),extra=Math.min(950,Math.round(55+18*depth));
+ return Math.min(deepEnabled?(deepBits>=1024?1450:deepBits>=512?1750:2050):2400,iterations+extra);
+}
+function planQuietRefinement(completedJob){
+ clearTimeout(refineTimer);
+ const serial=refineSerial;
+ refineTimer=setTimeout(()=>{
+  if(serial!==refineSerial||job!==completedJob||drag||pinch||document.hidden)return;
+  if(is3d)draw3d(true,true);
+  else draw2d(true,true);
+ },720);
+}
+
 const qFactor=()=>1n<<BigInt(deepBits);
-function getRenderTarget(rect,highQuality=false,for3d=false){
+function getRenderTarget(rect,highQuality=false,for3d=false,automatic=false){
  const dpr=Math.min(3.25,Math.max(1,window.devicePixelRatio||1));
- const density=highQuality?Math.min(3.2,dpr*1.6):Math.min(dpr,1.6)*quality;
+ const density=highQuality?Math.min(3.35,dpr*(automatic?1.32:1.65)):Math.min(dpr,1.6)*quality;
  let w=Math.max(240,Math.round(rect.width*density)),h=Math.max(180,Math.round(rect.height*density));
- let budget=highQuality?6_000_000:3_600_000;
- if(for3d)budget=Math.min(budget,highQuality?5_000_000:1_800_000);
+ let budget=highQuality?(automatic?4_000_000:7_200_000):3_600_000;
+ if(for3d)budget=highQuality?(automatic?1_350_000:2_800_000):1_800_000;
  const memory=Number(navigator.deviceMemory)||0,cores=Number(navigator.hardwareConcurrency)||0;
+ if(highQuality&&memory>=6&&cores>=6)budget*=1.14;
  if(memory>0&&memory<=4)budget*=.72;
  if(cores>0&&cores<=4)budget*=.82;
  const pixelScale=Math.min(1,Math.sqrt(budget/(w*h)));
@@ -157,7 +183,30 @@ function deepAllowed(){return ['mandelbrot','julia'].includes(active.id);}
 function setDeepMode(enabled){if(enabled&&!deepAllowed()){showToast('Precisione multipla disponibile per Mandelbrot e Julia');return;}if(enabled&&!deepEnabled){if(typeof BigInt!=='function'){showToast('Questo dispositivo non supporta BigInt');return;}deepInit();}else if(!enabled&&deepEnabled){updateDeepApprox();deepEnabled=false;}$('deepZoomBtn')?.classList.toggle('active',deepEnabled);$('deepZoomBtn')?.setAttribute('aria-pressed',String(deepEnabled));$('deepZoomBtn').innerHTML=deepEnabled?'∞ <span>DEEP ON</span>':'∞ <span>DEEP ZOOM</span>';updateHUD();scheduleDraw();}
 function setDeepPrecision(bits){bits=+bits;if(![128,256,512,1024].includes(bits))return;if(!deepEnabled){deepBits=bits;return;}deepCx=fixedRescale(deepCx,deepBits,bits);deepCy=fixedRescale(deepCy,deepBits,bits);deepScale=fixedRescale(deepScale,deepBits,bits);deepBits=bits;if(deepScale<minDeepSpan())deepScale=minDeepSpan();updateDeepApprox();scheduleDraw();updateHUD();}
 function deepZoomAt(f,x,y){const r=canvas2d.getBoundingClientRect(),px=(x??(r.left+r.width/2))-r.left,py=(y??(r.top+r.height/2))-r.top,s=Math.min(r.width,r.height);const ox=deepRatioQ(2*px-r.width,2*s),oy=deepRatioQ(2*py-r.height,2*s);const wx=deepCx+fixedMul(ox,deepScale),wy=deepCy+fixedMul(oy,deepScale);f=Math.max(.05,Math.min(20,Number(f)||1));deepScale=fixedMul(deepScale,numberToFixed(f));if(deepScale<minDeepSpan())deepScale=minDeepSpan();deepCx=wx-fixedMul(ox,deepScale);deepCy=wy-fixedMul(oy,deepScale);updateDeepApprox();scheduleDraw();updateHUD();}
-function initWorker(){try{worker=new Worker('js/render-worker.js?v=4610');worker.onmessage=e=>{let m=e.data;if(m.job!==job)return;if(m.progress!==undefined){workerProgress(m.progress);return;}if(m.error){console.warn('Errore renderer:',m.error);showFallback2d();hideLoader();return;}const image=new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height);if(canvas2d.width!==m.width)canvas2d.width=m.width;if(canvas2d.height!==m.height)canvas2d.height=m.height;const ctx=canvas2d.getContext('2d',{alpha:false});ctx.putImageData(image,0,0);lastFrame=document.createElement('canvas');lastFrame.width=canvas2d.width;lastFrame.height=canvas2d.height;lastFrame.getContext('2d').drawImage(canvas2d,0,0);lastRenderView=activeRenderView||getViewState();clearPreview();finishLoader();updateStats();};worker.onerror=e=>{console.warn('Worker non disponibile',e);worker?.terminate();worker=null;showFallback2d();hideLoader();showToast('Anteprima semplificata: motore in riavvio');};}catch(e){console.warn('Impossibile avviare il worker',e);worker=null;showFallback2d();}}
+function initWorker(){
+ try{
+  worker=new Worker('js/render-worker.js?v=4611');
+  worker.onmessage=e=>{
+   const m=e.data;if(m.job!==job)return;
+   if(m.progress!==undefined){if(!activeRenderAutomatic)workerProgress(m.progress);return;}
+   if(m.error){console.warn('Errore renderer:',m.error);if(!lastFrame)showFallback2d();hideLoader();return;}
+   try{
+    const image=new ImageData(new Uint8ClampedArray(m.pixels),m.width,m.height);
+    // Preserve the previous bitmap until a complete replacement is ready.
+    if(canvas2d.width!==m.width)canvas2d.width=m.width;
+    if(canvas2d.height!==m.height)canvas2d.height=m.height;
+    const ctx=canvas2d.getContext('2d',{alpha:false});ctx.putImageData(image,0,0);
+    lastFrame=document.createElement('canvas');lastFrame.width=m.width;lastFrame.height=m.height;
+    lastFrame.getContext('2d',{alpha:false}).drawImage(canvas2d,0,0);
+    lastRenderView=activeRenderView||getViewState();clearPreview();
+    if(activeRenderAutomatic)hideLoader();else finishLoader();
+    updateStats();
+    if(!activeRenderHigh)planQuietRefinement(m.job);
+   }catch(err){console.warn('Frame non disponibile:',err);hideLoader();}
+  };
+  worker.onerror=e=>{console.warn('Worker non disponibile',e);worker?.terminate();worker=null;if(!lastFrame)showFallback2d();hideLoader();showToast('Anteprima semplificata: motore in riavvio');};
+ }catch(e){console.warn('Impossibile avviare il worker',e);worker=null;if(!lastFrame)showFallback2d();}
+}
 
 function showFallback2d(){
  if(is3d)return;
@@ -182,14 +231,40 @@ function showFallback2d(){
 
 function showToast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600);}
 function setCanvasMode(three){is3d=three;if(three)clearPreview();canvas2d.classList.toggle('hidden',three);canvas3d.classList.toggle('hidden',!three);$('threeControls').hidden=!three;if(three)requestAnimationFrame(()=>resize3d(false));$('powerBlock').hidden=three;$('juliaBlock').hidden=active.id!=='julia';$('modeLabel').textContent=three?'3D RAY MARCH':'2D FRACTAL';$('precisionLabel').textContent=three?'WEBGL2 GPU':'CPU / WORKER';$('stageHint').textContent=three?'TRASCINA PER RUOTARE · DUE DITA PER ZOOM E ROTAZIONE':'TRASCINA · PIZZICA PER ZOOM · RUOTA CON DUE DITA';$('renderQualityBlock').hidden=three;}
-function draw2d(hd=false){if(is3d){draw3d(hd);return;}if(!worker)initWorker();if(!worker)return;const rect=stage.getBoundingClientRect(),highQuality=!!hd,target=getRenderTarget(rect,highQuality,false);let w=target.width,h=target.height,renderIterations=iterations;
- if(deepEnabled){const baseSide=deepBits>=1024?340:deepBits>=512?460:deepBits>=256?620:820;const maxSide=Math.min(1500,Math.round(baseSide*(highQuality?1.25:1)));const basePixels=deepBits>=1024?520000:deepBits>=512?760000:deepBits>=256?980000:1300000;const deepBudget=Math.min(1800000,Math.round(basePixels*(highQuality?1.6:1)));const shrink=Math.min(1,maxSide/Math.max(w,h),Math.sqrt(deepBudget/(w*h)));w=Math.max(96,Math.round(w*shrink));h=Math.max(96,Math.round(h*shrink));const iterCap=deepBits>=1024?700:deepBits>=512?900:deepBits>=256?1050:1200;renderIterations=Math.min(iterations,iterCap);}
- if(canvas2d.width!==w)canvas2d.width=w;if(canvas2d.height!==h)canvas2d.height=h;
- job++;activeRenderView=getViewState();const mp=w*h/1000000;const weight=deepEnabled?4.2:Math.max(.45,renderIterations/220);const estimate=Math.min(45000,Math.max(900,mp*weight*(active.mode==='3D'?300:1350)));
- const showProgress=fullscreenPendingRender||!artOnly||highQuality;fullscreenPendingRender=false;
- if(showProgress)showLoader(deepEnabled?'DEEP ZOOM · '+deepBits+' BIT':'RENDERING ARTWORK',estimate);else hideLoader();$('renderQualityHint').textContent=`${w} × ${h} · ${mp.toFixed(1)} MP · ${highQuality?'ALTA DEFINIZIONE':'ANTEPRIMA'}`;
- requestOverview();
- const cfg={job,width:w,height:h,type:active.id,cx:centerX,cy:centerY,scale,baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,rotation,iterations:renderIterations,power,juliaReal,juliaImag,palette,deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?deepScale.toString():'0'};worker.postMessage(cfg);updateHUD();}
+function draw2d(hd=false,automatic=false){
+ if(is3d){draw3d(hd,automatic);return;}
+ if(!worker)initWorker();if(!worker)return;
+ const rect=stage.getBoundingClientRect(),highQuality=!!hd;
+ const target=getRenderTarget(rect,highQuality,false,automatic);
+ let w=target.width,h=target.height,renderIterations=detailIterations(highQuality);
+ if(deepEnabled){
+  const baseSide=deepBits>=1024?400:deepBits>=512?560:deepBits>=256?720:920;
+  const maxSide=Math.min(1800,Math.round(baseSide*(highQuality?(automatic?1.20:1.45):1)));
+  const basePixels=deepBits>=1024?430000:deepBits>=512?730000:deepBits>=256?950000:1300000;
+  const deepBudget=Math.min(2_000_000,Math.round(basePixels*(highQuality?(automatic?1.35:1.7):1)));
+  const shrink=Math.min(1,maxSide/Math.max(w,h),Math.sqrt(deepBudget/(w*h)));
+  w=Math.max(96,Math.round(w*shrink));h=Math.max(96,Math.round(h*shrink));
+  renderIterations=Math.min(renderIterations,highQuality?(deepBits>=1024?1450:deepBits>=512?1750:2050):Math.max(iterations,deepBits>=1024?700:deepBits>=512?900:1200));
+ }
+ // Do not resize canvas here: resizing clears its pixels and produces black
+ // flashes before the new worker result arrives (especially in Telegram).
+ job++;activeRenderView=getViewState();activeRenderAutomatic=automatic;activeRenderHigh=highQuality;
+ const mp=w*h/1000000,weight=deepEnabled?4.2:Math.max(.45,renderIterations/220);
+ const estimate=Math.min(45000,Math.max(900,mp*weight*1350));
+ const showProgress=!automatic&&(fullscreenPendingRender||!artOnly||highQuality);
+ fullscreenPendingRender=false;
+ if(showProgress)showLoader(deepEnabled?'DEEP ZOOM · '+deepBits+' BIT':'RENDERING ARTWORK',estimate);
+ else hideLoader();
+ $('renderQualityHint').textContent=`${w} × ${h} · ${mp.toFixed(1)} MP · ${highQuality?'ALTA DEFINIZIONE':'ANTEPRIMA'}`;
+ if(!highQuality)requestOverview();
+ const cfg={job,width:w,height:h,type:active.id,cx:centerX,cy:centerY,scale,
+  baseCx:active.center[0],baseCy:active.center[1],baseScale:active.scale,
+  rotation,iterations:renderIterations,power,juliaReal,juliaImag,palette,
+  deep:deepEnabled,deepBits,deepCx:deepEnabled?deepCx.toString():'0',
+  deepCy:deepEnabled?deepCy.toString():'0',deepScale:deepEnabled?deepScale.toString():'0',
+  supersampled:highQuality};
+ worker.postMessage(cfg);updateHUD();
+}
 function getViewState(){const r=stage.getBoundingClientRect();return {id:active.id,palette,params:[iterations,power,juliaReal,juliaImag].join(':'),cx:centerX,cy:centerY,scale,rotation,deep:deepEnabled,bits:deepBits,dcx:deepCx,dcy:deepCy,dscale:deepScale,stageW:r.width,stageH:r.height};}
 function clearPreview(){
  if(!previewCanvas)return;
@@ -260,8 +335,39 @@ function ensureRenderer3d(){
  catch(e){console.warn('Renderer 3D non disponibile',e);renderer3d={ok:false};showToast('3D non disponibile su questo telefono');return false;}
 }
 function resize3d(highQuality=false){if(!renderer3d||!renderer3d.ok)return;if(highQuality){const target=getRenderTarget(stage.getBoundingClientRect(),true,true);renderer3d.resize(target.width,target.height);}else renderer3d.resize();}
-function draw3d(highQuality=false){if(!ensureRenderer3d())return;const target=highQuality?getRenderTarget(stage.getBoundingClientRect(),true,true):null;const estimate=Math.max(800,Math.min(12000,(target?target.pixels:canvas3d.width*canvas3d.height)/1000000*1700));const showProgress=fullscreenPendingRender||!artOnly||highQuality;fullscreenPendingRender=false;if(showProgress)showLoader('SCULTURA IN RENDERING',estimate);else hideLoader();$('renderQualityHint').textContent=target?`${target.width} × ${target.height} · ${(target.pixels/1e6).toFixed(1)} MP · ${'ALTA DEFINIZIONE'}`:'RENDER GPU';requestAnimationFrame(()=>{if(highQuality&&target)renderer3d.resize(target.width,target.height);renderer3d.set({kind:active.id==='mandelbulb'?0:active.id==='menger'?1:active.id==='mandelbox'?2:3,power:+$('threePower').value,detail:+$('threeDetail').value,palette});workerProgress(82);requestAnimationFrame(()=>{try{renderer3d.gl?.finish();}catch(_){}finishLoader();$('renderStat').textContent='WebGL2 GPU';});});}
-function scheduleDraw(hd=false){if(!is3d){job++;updatePreview();}clearTimeout(renderTimer);const highQuality=!!hd;renderTimer=setTimeout(()=>is3d?draw3d(highQuality):draw2d(highQuality),45);}
+function draw3d(highQuality=false,automatic=false){
+ if(!ensureRenderer3d())return;
+ const rect=stage.getBoundingClientRect(),target=highQuality?getRenderTarget(rect,true,true,automatic):null;
+ const estimate=Math.max(800,Math.min(12000,(target?target.pixels:canvas3d.width*canvas3d.height)/1000000*1700));
+ const showProgress=!automatic&&(fullscreenPendingRender||!artOnly||highQuality);
+ fullscreenPendingRender=false;
+ if(showProgress)showLoader('SCULTURA IN RENDERING',estimate);else hideLoader();
+ $('renderQualityHint').textContent=target?`${target.width} × ${target.height} · ${(target.pixels/1e6).toFixed(1)} MP · ALTA DEFINIZIONE`:'RENDER GPU';
+ const serial=refineSerial;
+ requestAnimationFrame(()=>{
+  if(serial!==refineSerial)return;
+  try{
+   renderer3d.setQuality(highQuality?1:0);
+   if(target)renderer3d.resize(target.width,target.height,true);
+   else renderer3d.resize(undefined,undefined,true);
+   renderer3d.set({kind:active.id==='mandelbulb'?0:active.id==='menger'?1:active.id==='mandelbox'?2:3,
+    power:+$('threePower').value,detail:Math.min(18,+$('threeDetail').value+(highQuality?2:0)),palette});
+   if(!automatic)workerProgress(85);
+   requestAnimationFrame(()=>{
+    if(serial!==refineSerial)return;
+    if(automatic)hideLoader();else finishLoader();
+    $('renderStat').textContent='WebGL2 GPU'+(highQuality?' · dettaglio':'');
+    if(!highQuality)planQuietRefinement(job);
+   });
+  }catch(e){console.warn('Render 3D:',e);hideLoader();}
+ });
+}
+function scheduleDraw(hd=false){
+ cancelRefinement();
+ if(!is3d){job++;updatePreview();}
+ clearTimeout(renderTimer);
+ renderTimer=setTimeout(()=>is3d?draw3d(!!hd):draw2d(!!hd),45);
+}
 function updateHUD(){const z=zoomDisplay();$('zoomLabel').textContent='ZOOM '+(is3d?renderer3d?.zoom.toFixed(2)+'×':z);$('coordLabel').textContent='x: '+(deepEnabled?centerX.toPrecision(7):centerX.toFixed(5))+' · y: '+(deepEnabled?centerY.toPrecision(7):centerY.toFixed(5));$('positionStat').textContent=centerX.toFixed(3)+' / '+centerY.toFixed(3);$('zoomStat').textContent=is3d?renderer3d?.zoom.toFixed(2)+'×':z;$('precisionLabel').textContent=is3d?'WEBGL2 GPU':deepEnabled?'BIGINT '+deepBits+' BIT':'CPU / WORKER';}
 function updateStats(){updateHUD();$('renderStat').textContent=is3d?'WebGL2 GPU':'Canvas CPU / Worker';}
 function selectFormula(id){const found=catalog.find(f=>f.id===id);if(!found)return;if(found.id!==active.id){lastFrame=null;lastRenderView=null;stopOverview();}if(deepEnabled&&!['mandelbrot','julia'].includes(id)){updateDeepApprox();deepEnabled=false;}active=found;rotation=0;centerX=found.center[0];centerY=found.center[1];scale=found.scale;if(deepEnabled)deepInit();iterations=found.iterations;power=found.power||2;$('iterations').value=iterations;$('iterationsValue').value=iterations;$('power').value=power;$('powerValue').value=power.toFixed(1);$('currentTitle').textContent=found.name;$('currentCategory').textContent=found.group.toUpperCase();$('deepZoomBtn').hidden=!['mandelbrot','julia'].includes(id);$('deepPrecisionBlock').hidden=!['mandelbrot','julia'].includes(id);$('deepZoomBtn').classList.toggle('active',deepEnabled);$('deepZoomBtn').innerHTML=deepEnabled?'∞ <span>DEEP ON</span>':'∞ <span>DEEP ZOOM</span>';$('juliaBlock').hidden=id!=='julia';$('powerBlock').hidden=!['multibrot','julia'].includes(id);$('power').disabled=false;$('power').value=power;$('powerValue').value=power.toFixed(1);setCanvasMode(found.mode==='3D');$('threePower').value=found.power||8;$('threePowerValue').value=$('threePower').value;$('threePower').disabled=id!=='mandelbulb';$('threeDetail').value=found.iterations;$('threeDetailValue').value=$('threeDetail').value;populatePresets();renderLibrary();scheduleDraw();updateHUD();}
@@ -360,7 +466,7 @@ async function toggleArtOnly(force){
  const next=typeof force==='boolean'?force:!artOnly,tg=window.Telegram?.WebApp;
  if(next===artOnly)return;
  const token=++fullscreenGeneration;
- clearTimeout(renderTimer);
+ cancelRefinement();clearTimeout(renderTimer);
  // Take the previous frame as the stable reference before CSS changes.
  if(!is3d&&lastFrame&&lastRenderView)updatePreview();
  stageGeometryRef=screenGeometry();
@@ -404,7 +510,7 @@ function setupInteractions(){
  $('categoryTabs').addEventListener('click',e=>{let b=e.target.closest('[data-category]');if(!b)return;category=b.dataset.category;document.querySelectorAll('.cat-tab').forEach(x=>x.classList.toggle('active',x===b));renderLibrary();});$('searchFormula').addEventListener('input',renderLibrary);
  bindRange('iterations',v=>{iterations=v;$('iterationsValue').value=v;scheduleDraw();});bindRange('power',v=>{power=v;$('powerValue').value=v.toFixed(1);scheduleDraw();});bindRange('juliaReal',v=>{juliaReal=v;$('juliaRealValue').value=v.toFixed(2);scheduleDraw();});bindRange('juliaImag',v=>{juliaImag=v;$('juliaImagValue').value=v.toFixed(3);scheduleDraw();});bindRange('quality',v=>{quality=v/100;$('qualityValue').value=v+'%';scheduleDraw();});bindRange('threePower',v=>{$('threePowerValue').value=v;if(renderer3d)renderer3d.power=v;scheduleDraw();});bindRange('threeDetail',v=>{$('threeDetailValue').value=v;if(renderer3d)renderer3d.detail=v;scheduleDraw();});
  $('palette').onchange=e=>{palette=e.target.value;syncPaletteButtons();scheduleDraw();};$('paletteCycle').onclick=()=>{let list=[...$('palette').options].map(o=>o.value),i=list.indexOf(palette);palette=list[(i+1)%list.length];$('palette').value=palette;syncPaletteButtons();scheduleDraw();};$('preset').onchange=e=>applyPreset(+e.target.value);
- $('resetBtn').onclick=resetView;$('zoomIn').onclick=()=>zoom(.7);$('zoomOut').onclick=()=>zoom(1.4);$('deepZoomBtn').onclick=()=>setDeepMode(!deepEnabled);$('deepPrecision').onchange=e=>setDeepPrecision(+e.target.value);$('randomBtn').onclick=randomFractal;$('favoriteBtn').onclick=toggleFavorite;$('formulaInfoBtn').onclick=showFormulaInfo;$('highQualityBtn').onclick=()=>is3d?draw3d(true):draw2d(true);$('randomJulia').onclick=()=>{juliaReal=+(Math.random()*1.2-.6).toFixed(3);juliaImag=+(Math.random()*1.2-.6).toFixed(3);$('juliaReal').value=juliaReal;$('juliaImag').value=juliaImag;$('juliaRealValue').value=juliaReal.toFixed(2);$('juliaImagValue').value=juliaImag.toFixed(3);selectFormula('julia');};
+ $('resetBtn').onclick=resetView;$('zoomIn').onclick=()=>zoom(.7);$('zoomOut').onclick=()=>zoom(1.4);$('deepZoomBtn').onclick=()=>setDeepMode(!deepEnabled);$('deepPrecision').onchange=e=>setDeepPrecision(+e.target.value);$('randomBtn').onclick=randomFractal;$('favoriteBtn').onclick=toggleFavorite;$('formulaInfoBtn').onclick=showFormulaInfo;$('highQualityBtn').onclick=()=>{cancelRefinement();clearTimeout(renderTimer);is3d?draw3d(true,false):draw2d(true,false);};$('randomJulia').onclick=()=>{juliaReal=+(Math.random()*1.2-.6).toFixed(3);juliaImag=+(Math.random()*1.2-.6).toFixed(3);$('juliaReal').value=juliaReal;$('juliaImag').value=juliaImag;$('juliaRealValue').value=juliaReal.toFixed(2);$('juliaImagValue').value=juliaImag.toFixed(3);selectFormula('julia');};
  $('fullscreenBtn').onclick=()=>toggleArtOnly();
  $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa. Il pulsante ↻ CICLA anima le tinte; scegli ½×–4× per la velocità e ripremilo per fermarle.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
  $('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal();};
@@ -496,6 +602,6 @@ function initArtExplorer(){
  $('helpBtn').onclick=()=>{$('modalContent').innerHTML='<h2>Esplora i colori</h2><p>Scegli un’opera dalla collezione, esplora le <b>32 palette artistiche</b> o premi ✦ COLORI per una combinazione a sorpresa. Il pulsante ↻ CICLA anima le tinte; scegli ½×–4× per la velocità e ripremilo per fermarle.</p><p>Trascina con un dito; usa due dita per ingrandire, spostare e ruotare. Il tasto ⛶ mostra soltanto il frattale, senza i pannelli dell’app. Per uscire usa Indietro, Esc o una pressione prolungata nell’angolo in alto a destra.</p>';openModal();};
 }
 
-function start(){stageGeometryRef=screenGeometry();if(typeof ResizeObserver!=='undefined')new ResizeObserver(scheduleGeometrySync).observe(stage);setupPaletteChooser();initColorCycle();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{scheduleGeometrySync();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=4610',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
+function start(){stageGeometryRef=screenGeometry();if(typeof ResizeObserver!=='undefined')new ResizeObserver(scheduleGeometrySync).observe(stage);setupPaletteChooser();initColorCycle();initWorker();/* La GPU 3D si inizializza soltanto quando serve, dopo lo splash. */setupInteractions();renderLibrary();$('favoriteBtn').innerHTML=(favorites.has(active.id)?'★':'☆')+' <span>Preferiti</span>';selectFormula('mandelbrot');initArtExplorer();applyArtPreset('violet-reverie');if(window.Telegram?.WebApp){let tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor?.('#0b1020');tg.setBackgroundColor?.('#080b16');if(tg.isVersionAtLeast?.('8.0')){tg.onEvent?.('fullscreenChanged',()=>{document.body.classList.toggle('telegram-fullscreen',!!tg.isFullscreen);if(!tg.isFullscreen&&artOnly)toggleArtOnly(false);});tg.onEvent?.('fullscreenFailed',()=>{document.body.classList.toggle('art-only',artOnly);});tg.onEvent?.('viewportChanged',e=>{scheduleGeometrySync();});} }if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('service-worker.js?v=4611',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
 try{start();}catch(e){console.error('Avvio Fractal Art Explorer:',e);const g=document.getElementById('artCards');if(g&&!g.children.length&&window.FRACTAL_ART_PRESETS){g.innerHTML=window.FRACTAL_ART_PRESETS.map(p=>`<button class="art-card" onclick="location.reload()"><span class="art-card-copy"><strong>${p.title}</strong><small>${p.subtitle}</small></span></button>`).join('');}const status=document.getElementById('engineStatus');if(status)status.textContent='AVVIO INCOMPLETO — RIAPRI LA MINI APP';}
 })();

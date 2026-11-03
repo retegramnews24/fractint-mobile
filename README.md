@@ -1,3 +1,29 @@
+# Fractal Art Explorer v4.6.11 — Dettaglio progressivo e GPU migliorata
+
+Base: **v4.6.10 (stabile)**. Stessa interfaccia, 123 opere, 32 palette, 71 formule, ciclo cromatico, zoom/pan, rotazione e fullscreen. Nessun pulsante di screenshot o download.
+
+## Motore a tre livelli
+
+1. **Durante il gesto:** l'anteprima estesa offscreen riproietta l'immagine precedente e riempie i bordi, senza zone nere.
+2. **Rendering normale:** il worker CPU (o WebGL2 nel 3D) calcola rapidamente l'inquadratura corrente. La tela precedente non viene cancellata in attesa del nuovo risultato.
+3. **Rifinitura automatica:** dopo circa 0,72 secondi dal completamento del rendering normale, se la vista è rimasta ferma, parte un secondo render a densità di pixel maggiore, con iterazioni adattive allo zoom nei frattali di fuga. Durante questo passaggio la tela rimane navigabile; un nuovo gesto annulla l'elaborazione precedente.
+
+**Supercampionamento:** i frattali 2D vengono calcolati su una bitmap con più pixel dello spazio CSS, poi ridotti dal compositore del browser, migliorando i bordi senza aggiungere una costosa media di campioni per pixel. Budget mobile adattivo di circa 4 MP per la rifinitura automatica e fino a circa 7,2 MP per il comando manuale, prima delle riduzioni per dispositivi meno potenti.
+
+**Zoom profondo:** rimane il calcolo numerico `BigInt` con 128/256/512/1024 bit per Mandelbrot e Julia. Aumentati i limiti pratici del dettaglio post-movimento e resa adattiva delle iterazioni; il limite effettivo resta vincolato dalle risorse del telefono. Le altre famiglie non sono diventate arbitrariamente multiprecisione.
+
+**3D:** secondo passaggio WebGL2 a densità adattiva, distanze/normal più precise e occlusione ambientale leggera sui dettagli fermi; passaggio rapido durante il movimento. Non viene forzato un render pesante mentre stai ruotando.
+
+## Pubblicazione
+
+Sostituire **tutti** i file del repository GitHub Pages, mantenendo la struttura (`index.html`, `js/`, `assets/`). La cache offline diventa `fae-v4-6-11-progressive-hd`; chiudere completamente e riaprire la Mini App Telegram dopo l'aggiornamento. Conservare il precedente ZIP v4.6.10 come backup.
+
+## Limiti e test
+
+In Android il renderer HQ può richiedere alcuni secondi, soprattutto con `BigInt` ad alte precisioni e su frattali particolarmente complessi. Per evitare rallentamenti il dettaglio aumenta solo a vista ferma ed è annullabile. Lo zoom delle geometrie e l'accuratezza 3D hanno limiti diversi dalla precisione multipla di Mandelbrot/Julia. Il fullscreen deve ancora essere confermato su un dispositivo Telegram Android reale.
+
+---
+
 # Fractal Art Explorer v4.6.10 — Ciclo cromatico
 
 Questa release usa la **v4.6.9 stabile** come base, senza modificare i suoi algoritmi di zoom, trascinamento, proiezione fullscreen o anteprima offscreen.
