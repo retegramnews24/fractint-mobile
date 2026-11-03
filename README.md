@@ -17,3 +17,11 @@ Scorri i colori sotto la tela; tocca un'opera dalla collezione. Trascina per spo
 
 ## Note tecniche
 L'app resta **completamente nel browser interno Telegram**. Il fullscreen riguarda il contenuto HTML della Mini App; eventuali pulsanti nativi sovrapposti di Telegram non sono controllabili dal codice della pagina.
+
+## v4.6.7 — correzione avvio Telegram
+- Motor 3D inizializzato su richiesta, non allo splash.
+- Anteprima leggera di recupero se il worker grafico fallisce.
+- Splash originale mantenuto a cinque secondi con fallback CPU alleggerito.
+- Script con versione e cache network-first: evita file mischiati di release diverse.
+- Rimangono 71 formule, 123 opere e 32 palette; nessuna funzione di salvataggio o screenshot.
+- Dopo la pubblicazione, chiudi e riapri la Mini App. Se Telegram mostra ancora file vecchi, svuota la sua cache delle pagine Web.

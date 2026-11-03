@@ -3,6 +3,7 @@
  const screen=document.getElementById('splashScreen');let canvas=document.getElementById('splashCanvas');
  if(!screen||!canvas)return;
  const start=performance.now();let stopped=false,raf=0,last=0;
+ const watchdog=setTimeout(()=>{screen.classList.add('is-leaving');screen.style.pointerEvents='none';setTimeout(()=>screen.remove(),440)},5050);
  const vertex=`#version 300 es
  in vec2 position;
  void main(){gl_Position=vec4(position,0.,1.);}`;
@@ -42,13 +43,13 @@
  function resize(){
    const ww=Math.max(1,innerWidth),hh=Math.max(1,innerHeight);
    if(gl){const dpr=Math.min(2,devicePixelRatio||1);const fit=Math.min(1,Math.sqrt(1500000/(ww*hh*dpr*dpr)));w=Math.max(1,Math.round(ww*dpr*fit));h=Math.max(1,Math.round(hh*dpr*fit));}
-   else{const scale=Math.min(1,600/Math.max(ww,hh));w=Math.max(100,Math.round(ww*scale));h=Math.max(100,Math.round(hh*scale));}
+   else{const scale=Math.min(1,270/Math.max(ww,hh));w=Math.max(100,Math.round(ww*scale));h=Math.max(100,Math.round(hh*scale));}
    canvas.width=w;canvas.height=h;
    if(gl){gl.viewport(0,0,w,h);}else if(cpu){img=cpu.createImageData(w,h);pix=img.data;cpu.imageSmoothingEnabled=true;}
  }
  function draw(t){
   if(stopped)return;
-  if(t-last<(gl?50:100)){raf=requestAnimationFrame(draw);return;}
+  if(t-last<(gl?60:210)){raf=requestAnimationFrame(draw);return;}
   last=t;const sec=(t-start)/1000;
   if(gl){
    gl.useProgram(program);gl.uniform2f(gl._res,w,h);gl.uniform1f(gl._sec,sec);
@@ -60,8 +61,8 @@
     for(let px=0;px<w;px++){
      const xx=((px+.5)/w-.5)*3.05/zoom,x0=xx*cs-yy*sn,y0=xx*sn+yy*cs;
      let x=x0,y=y0,n=0,xx2=0,yy2=0;
-     while(n<72&&xx2+yy2<64){y=2*x*y+ci;x=xx2-yy2+cr;xx2=x*x;yy2=y*y;n++;}
-     let v;if(n>=72)v=.035+.035*Math.sin((x0-y0)*7+phase);
+     while(n<48&&xx2+yy2<64){y=2*x*y+ci;x=xx2-yy2+cr;xx2=x*x;yy2=y*y;n++;}
+     let v;if(n>=48)v=.035+.035*Math.sin((x0-y0)*7+phase);
      else{const mag=Math.sqrt(xx2+yy2);v=(n+1-Math.log2(Math.max(1e-8,Math.log2(Math.max(1.000001,mag)))))*.075+phase;}
      const k=(py*w+px)*4,a=v*6.2831853,glow=n>=72?.20:1;
      pix[k]=Math.max(0,Math.min(255,(.52+.48*Math.cos(a+.2))*210*glow+12));
@@ -77,7 +78,7 @@
  resize();window.addEventListener('resize',resize,{passive:true});raf=requestAnimationFrame(draw);
  const leaveAt=Math.max(0,5000-(performance.now()-start)-400);
  setTimeout(()=>{screen.classList.add('is-leaving');setTimeout(()=>{
-  stopped=true;cancelAnimationFrame(raf);window.removeEventListener('resize',resize);screen.remove();
+  stopped=true;clearTimeout(watchdog);cancelAnimationFrame(raf);window.removeEventListener('resize',resize);screen.remove();
   if(gl){try{gl.getExtension('WEBGL_lose_context')?.loseContext();}catch(_){}}
  },420);},leaveAt);
 })();
